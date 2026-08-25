@@ -1,0 +1,22 @@
+{
+  "profiles": {
+    "StoreChecking.Api": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+
+        "_ghi_chu_db": "Postgres chạy bằng Docker ở máy nhà — lệnh dựng nằm trong README.",
+        "ConnectionStrings__Postgres": "Host=localhost;Port=55432;Database=storechecking;Username=sc;Password=sc-test-only",
+
+        "_ghi_chu_auth": "URL project Supabase, CHỈ dùng để tải khoá công khai xác thực token. Không phải bí mật — nó đã nằm sẵn trong bundle của app Angular.",
+        "Auth__SupabaseUrl": "https://nzjdhhjtwlfdrgdnydex.supabase.co",
+
+        "Cors__Origins": "http://localhost:4287,https://inventory-and-tracking-profit-sand.vercel.app",
+        "Swagger__Enabled": "true"
+      },
+      "applicationUrl": "https://localhost:65072;http://localhost:65073"
+    }
+  }
+}

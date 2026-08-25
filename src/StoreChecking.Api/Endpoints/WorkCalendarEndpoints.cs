@@ -18,7 +18,7 @@ public static class WorkCalendarEndpoints
 
     public static RouteGroupBuilder MapWorkCalendar(this IEndpointRouteBuilder app)
     {
-        var g = app.MapGroup("/api/work-calendar").RequireAuthorization();
+        var g = app.MapGroup("/api/work-calendar").RequireAuthorization().WithTags("Lịch làm");
 
         // ---------- Ô ngày ----------
 
@@ -37,7 +37,9 @@ public static class WorkCalendarEndpoints
                 .ToListAsync();
 
             return Results.Ok(rows);
-        });
+        })
+        .WithSummary("Ô ngày trong khoảng")
+        .WithDescription("from/to dạng YYYY-MM-DD. Chu kỳ lịch chạy 26 tháng trước → 25 tháng này.");
 
         // PUT /api/work-calendar/days/2026-10-01
         // Ô không ghi chú và không màu -> XOÁ dòng cho bảng khỏi phình (giống hành vi cũ).
@@ -69,7 +71,9 @@ public static class WorkCalendarEndpoints
 
             await db.SaveChangesAsync();
             return Results.Ok(new WorkDayDto(row.Id, S(row.Day), row.Note, row.Color));
-        });
+        })
+        .WithSummary("Ghi một ô ngày")
+        .WithDescription("Không ghi chú và không màu thì XOÁ hẳn dòng, trả 204.");
 
         // ---------- Ghi chú chung của tháng ----------
 
@@ -86,7 +90,9 @@ public static class WorkCalendarEndpoints
                 .ToListAsync();
 
             return Results.Ok(rows);
-        });
+        })
+        .WithSummary("Ghi chú chung của tháng")
+        .WithDescription("period = ngày 1 của tháng, ví dụ 2026-10-01.");
 
         // POST /api/work-calendar/notes
         g.MapPost("/notes", async (CreateMonthNoteRequest body, AppDbContext db, CurrentUser me) =>
@@ -106,7 +112,8 @@ public static class WorkCalendarEndpoints
 
             return Results.Created($"/api/work-calendar/notes/{row.Id}",
                 new MonthNoteDto(row.Id, S(row.Period), row.Content, row.Sort));
-        });
+        })
+        .WithSummary("Thêm một dòng ghi chú trống");
 
         // PUT /api/work-calendar/notes/{id}
         g.MapPut("/notes/{id:guid}", async (Guid id, UpdateMonthNoteRequest body, AppDbContext db) =>
@@ -119,7 +126,8 @@ public static class WorkCalendarEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new MonthNoteDto(row.Id, S(row.Period), row.Content, row.Sort));
-        });
+        })
+        .WithSummary("Sửa nội dung một dòng");
 
         // DELETE /api/work-calendar/notes/{id}
         g.MapDelete("/notes/{id:guid}", async (Guid id, AppDbContext db) =>
@@ -130,7 +138,8 @@ public static class WorkCalendarEndpoints
             db.WorkMonthNotes.Remove(row);
             await db.SaveChangesAsync();
             return Results.NoContent();
-        });
+        })
+        .WithSummary("Xoá một dòng ghi chú");
 
         return g;
     }

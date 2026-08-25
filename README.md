@@ -58,6 +58,21 @@ Cổng **8140** chọn để không đụng `solar-web` (8130) và MQTT (1883).
 
 Container DB **không mở cổng ra ngoài** — chỉ container `api` nói chuyện với nó.
 
+## Swagger — test endpoint bằng tay
+
+Chạy bằng F5 trong Visual Studio là trình duyệt tự mở `/swagger`.
+
+Muốn gọi được các endpoint có bảo vệ thì bấm nút **Authorize** rồi dán access token
+(chỉ dán token, **không** gõ chữ `Bearer`). Lấy token: mở app Angular đã đăng nhập,
+F12 → Console:
+
+```js
+JSON.parse((localStorage.getItem(Object.keys(localStorage).find(k => k.includes('auth-token'))) || '').replace(/^base64-/, s => atob(s.slice(7)))).access_token
+```
+
+Swagger **mặc định TẮT khi chạy Production** vì nó phơi bày toàn bộ danh sách endpoint.
+Cần bật tạm trên NAS thì đặt `Swagger__Enabled=true`.
+
 ## API
 
 Mọi endpoint dưới `/api/` đều cần header `Authorization: Bearer <token>`.
