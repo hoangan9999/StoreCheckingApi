@@ -1,0 +1,5 @@
+bin/
+obj/
+pgdata/
+.env
+.git/

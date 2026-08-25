@@ -1,0 +1,12 @@
+# .NET
+bin/
+obj/
+*.user
+
+# Bí mật + dữ liệu — TUYỆT ĐỐI không commit
+.env
+pgdata/
+
+# IDE
+.vs/
+.idea/
