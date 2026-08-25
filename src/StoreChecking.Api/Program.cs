@@ -9,10 +9,10 @@ using StoreChecking.Api.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ---------- Cấu hình ----------
-// Kiểm hết ở đây và báo lỗi RÕ RÀNG ngay lúc khởi động. Thiếu cấu hình mà để chạy tiếp
-// thì nó sẽ nổ mơ hồ ở request đầu tiên ("MetadataAddress or Authority must use HTTPS"),
-// rất khó đoán nguyên nhân.
+// ---------- Configuration ----------
+// Validate everything here and fail LOUDLY at startup. Letting a missing setting through
+// produces a confusing crash on the first request ("MetadataAddress or Authority must use
+// HTTPS") that points nowhere near the real cause.
 var connString = builder.Configuration.GetConnectionString("Postgres");
 if (string.IsNullOrWhiteSpace(connString))
 {
@@ -38,11 +38,11 @@ if (!supabaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
 var allowedOrigins = (builder.Configuration["Cors:Origins"] ?? "")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-// Swagger: bật sẵn khi chạy máy nhà. Trên NAS thì mặc định TẮT vì nó phơi bày toàn bộ
-// danh sách endpoint; cần bật tạm thì đặt Swagger__Enabled=true.
+// Swagger is on by default when developing locally and OFF in production, where it would
+// expose the whole endpoint surface. Set Swagger__Enabled=true to turn it on temporarily.
 var swaggerEnabled = builder.Configuration.GetValue("Swagger:Enabled", builder.Environment.IsDevelopment());
 
-// ---------- Dịch vụ ----------
+// ---------- Services ----------
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connString));
@@ -51,13 +51,13 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
-        // Supabase công bố khoá công khai (ES256) ở /auth/v1/.well-known/jwks.json.
-        // JwtBearer tự tải và tự làm mới khi Supabase xoay khoá.
+        // Supabase publishes its public key (ES256) at /auth/v1/.well-known/jwks.json.
+        // JwtBearer fetches it and refreshes automatically when Supabase rotates keys.
         o.Authority = $"{supabaseUrl}/auth/v1";
         o.MetadataAddress = $"{supabaseUrl}/auth/v1/.well-known/openid-configuration";
         o.RequireHttpsMetadata = true;
 
-        // Giữ nguyên tên claim gốc, không để ASP.NET đổi `sub` thành NameIdentifier.
+        // Keep the original claim names; do not let ASP.NET rename `sub` to NameIdentifier.
         o.MapInboundClaims = false;
 
         o.TokenValidationParameters = new TokenValidationParameters
@@ -70,9 +70,9 @@ builder.Services
             ValidateIssuerSigningKey = true,
             NameClaimType = "sub",
 
-            // Cho phép lệch đồng hồ 60 giây. Chính là lỗi "JWT issued at future" đang
-            // gặp bên Supabase: token vừa phát ra mà đồng hồ bên xác thực chậm hơn
-            // một chút là bị từ chối. Ở đây ta chủ động dung sai.
+            // Tolerate 60s of clock skew. This is exactly the "JWT issued at future"
+            // failure seen on Supabase: a freshly minted token is rejected when the
+            // validating side's clock runs slightly behind the issuer's.
             ClockSkew = TimeSpan.FromSeconds(60),
         };
     });
@@ -82,7 +82,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
 {
     if (allowedOrigins.Length > 0) p.WithOrigins(allowedOrigins);
-    else p.AllowAnyOrigin();          // chỉ nên xảy ra lúc chạy máy nhà
+    else p.AllowAnyOrigin();          // should only ever happen while developing locally
     p.AllowAnyHeader().AllowAnyMethod();
 }));
 
@@ -101,9 +101,9 @@ if (swaggerEnabled)
                 "JSON.parse(Object.entries(localStorage).find(([k])=>k.includes('auth-token'))[1].replace(/^base64-/,(m)=>'')).access_token",
         });
 
-        // Nút Authorize: nhập token một lần, mọi request sau tự kèm header.
-        // Microsoft.OpenApi v2 (Swashbuckle 10) bỏ thuộc tính Reference trên chính
-        // OpenApiSecurityScheme — phải trỏ tới nó bằng OpenApiSecuritySchemeReference.
+        // Authorize button: paste the token once and every later request carries the header.
+        // Microsoft.OpenApi v2 (Swashbuckle 10) dropped the Reference property on
+        // OpenApiSecurityScheme, so it has to be referenced via OpenApiSecuritySchemeReference.
         c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
             Name = "Authorization",
@@ -113,8 +113,8 @@ if (swaggerEnabled)
             In = ParameterLocation.Header,
             Description = "Dán access token Supabase vào đây.",
         });
-        // Swashbuckle 10 nhận một hàm dựng theo document, để reference gắn được vào
-        // đúng tài liệu đang sinh.
+        // Swashbuckle 10 takes a factory over the document so the reference can bind to
+        // the document currently being generated.
         c.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
         {
             [new OpenApiSecuritySchemeReference("Bearer", doc)] = new List<string>(),
@@ -130,7 +130,7 @@ if (swaggerEnabled)
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "StoreChecking API v1");
-        c.RoutePrefix = "swagger";       // mở ở /swagger
+        c.RoutePrefix = "swagger";       // served at /swagger
         c.DocumentTitle = "StoreChecking API";
     });
 }
@@ -139,9 +139,9 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ---------- Endpoint ----------
+// ---------- Endpoints ----------
 
-// Kiểm tra sống: dùng cho healthcheck của Docker và để biết DB có nối được không.
+// Liveness probe: used by the Docker healthcheck, and tells us whether the DB is reachable.
 app.MapGet("/health", async (AppDbContext db) =>
 {
     var dbOk = await db.Database.CanConnectAsync();
@@ -151,7 +151,7 @@ app.MapGet("/health", async (AppDbContext db) =>
 .WithSummary("Sống chưa, DB nối được chưa (không cần token)")
 .WithTags("Hệ thống");
 
-// Soi nhanh token đang gửi lên có hợp lệ không, và user id là ai.
+// Quick way to check whether the supplied token is valid and which user it belongs to.
 app.MapGet("/api/me", (CurrentUser me, ClaimsPrincipal user) => Results.Ok(new
 {
     userId = me.Id,

@@ -3,7 +3,7 @@ bin/
 obj/
 *.user
 
-# Bí mật + dữ liệu — TUYỆT ĐỐI không commit
+# Secrets and data — NEVER commit
 .env
 pgdata/
 

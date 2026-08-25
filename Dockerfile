@@ -1,4 +1,4 @@
-# Build đa kiến trúc: chạy được cả NAS x86_64 lẫn ARM.
+# Multi-arch build: works on both x86_64 and ARM NAS hardware.
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 COPY src/StoreChecking.Api/StoreChecking.Api.csproj src/StoreChecking.Api/
@@ -10,7 +10,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 COPY --from=build /app .
 
-# Kestrel nghe cổng 8080 trong container; docker-compose ánh xạ ra ngoài.
+# Kestrel listens on 8080 inside the container; docker-compose maps it outward.
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 

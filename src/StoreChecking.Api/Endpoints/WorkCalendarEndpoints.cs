@@ -8,7 +8,7 @@ namespace StoreChecking.Api.Endpoints;
 
 public static class WorkCalendarEndpoints
 {
-    /// <summary>Định dạng ngày dùng chung với Angular: 'YYYY-MM-DD'.</summary>
+    /// <summary>Date format shared with the Angular client: 'YYYY-MM-DD'.</summary>
     private const string DayFormat = "yyyy-MM-dd";
 
     private static string S(DateOnly d) => d.ToString(DayFormat);
@@ -20,7 +20,7 @@ public static class WorkCalendarEndpoints
     {
         var g = app.MapGroup("/api/work-calendar").RequireAuthorization().WithTags("Lịch làm");
 
-        // ---------- Ô ngày ----------
+        // ---------- Day cells ----------
 
         // GET /api/work-calendar/days?from=2026-09-26&to=2026-10-25
         g.MapGet("/days", async (string? from, string? to, AppDbContext db) =>
@@ -42,7 +42,8 @@ public static class WorkCalendarEndpoints
         .WithDescription("from/to dạng YYYY-MM-DD. Chu kỳ lịch chạy 26 tháng trước → 25 tháng này.");
 
         // PUT /api/work-calendar/days/2026-10-01
-        // Ô không ghi chú và không màu -> XOÁ dòng cho bảng khỏi phình (giống hành vi cũ).
+        // A cell with no note and no colour is DELETED rather than stored, so the table
+        // does not fill up with empty rows. Matches the previous Supabase behaviour.
         g.MapPut("/days/{day}", async (string day, SaveWorkDayRequest body,
                                        AppDbContext db, CurrentUser me) =>
         {
@@ -75,7 +76,7 @@ public static class WorkCalendarEndpoints
         .WithSummary("Ghi một ô ngày")
         .WithDescription("Không ghi chú và không màu thì XOÁ hẳn dòng, trả 204.");
 
-        // ---------- Ghi chú chung của tháng ----------
+        // ---------- Month notes ----------
 
         // GET /api/work-calendar/notes?period=2026-10-01
         g.MapGet("/notes", async (string? period, AppDbContext db) =>

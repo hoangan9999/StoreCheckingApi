@@ -1,8 +1,8 @@
-# Chạy trên NAS Synology (Container Manager -> Project).
-# Trước khi Build: tạo file .env cạnh file này (xem .env.example).
+# Runs on the Synology NAS (Container Manager -> Project).
+# Before building: create a .env file next to this one (see .env.example).
 #
-# Cổng 8140 chọn để không đụng các service đang chạy:
-#   8130 = solar-web, 8123 = home assistant (đã tắt), 1883 = mqtt
+# Port 8140 was picked to avoid the services already running on this NAS:
+#   8130 = solar-web, 8123 = home assistant (disabled), 1883 = mqtt
 
 x-logging: &default-logging
   driver: json-file
@@ -20,18 +20,18 @@ services:
       POSTGRES_DB: storechecking
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      # Bảo Postgres so sánh chuỗi kiểu C -> nhanh và ổn định, không phụ thuộc locale
+      # C collation: faster and stable, and does not depend on the host locale
       POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
-      # Postgres TỰ CHẠY các file .sql ở đây khi volume còn trống (chỉ lần đầu).
+      # Postgres runs the .sql files here automatically, but only while the volume is empty.
       - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d storechecking"]
       interval: 10s
       timeout: 5s
       retries: 10
-    # KHÔNG mở cổng ra ngoài: chỉ container api nói chuyện với DB.
+    # Deliberately NOT published: only the api container talks to the database.
     expose:
       - "5432"
 
@@ -45,9 +45,9 @@ services:
         condition: service_healthy
     environment:
       ConnectionStrings__Postgres: "Host=api-db;Port=5432;Database=storechecking;Username=${DB_USER};Password=${DB_PASSWORD}"
-      # Chỉ dùng để tải khoá công khai xác thực token — không lưu dữ liệu gì trên Supabase.
+      # Only used to fetch the public key that validates tokens. No data is stored on Supabase.
       Auth__SupabaseUrl: ${SUPABASE_URL}
-      # Các origin được phép gọi API. Nhiều origin thì ngăn bằng dấu phẩy.
+      # Origins allowed to call this API, comma separated.
       Cors__Origins: ${CORS_ORIGINS}
       ASPNETCORE_ENVIRONMENT: Production
     ports:

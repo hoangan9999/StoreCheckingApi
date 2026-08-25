@@ -3,12 +3,12 @@ using System.Security.Claims;
 namespace StoreChecking.Api.Auth;
 
 /// <summary>
-/// Người dùng của request hiện tại, lấy từ claim `sub` trong JWT.
-/// <para>Đây là MẢNH GHÉP THAY THẾ RLS của Supabase. Bên Supabase, database tự chặn:
-/// quên điều kiện lọc thì Postgres vẫn không trả dữ liệu người khác. Ở đây không có
-/// lưới an toàn đó, nên Id này được cắm vào global query filter của EF Core
-/// (xem AppDbContext) để mọi truy vấn đều tự lọc theo chủ sở hữu.</para>
-/// <para>KHÔNG BAO GIỜ lấy user id từ body hay query string của client.</para>
+/// The user behind the current request, taken from the JWT `sub` claim.
+/// <para>This is what REPLACES Supabase row level security. On Supabase the database
+/// itself refuses to return other people's rows even if a query forgets its filter.
+/// There is no such safety net here, so this Id feeds EF Core's global query filter
+/// (see AppDbContext) and every query filters by owner automatically.</para>
+/// <para>NEVER take the user id from a request body or query string.</para>
 /// </summary>
 public sealed class CurrentUser
 {
@@ -17,14 +17,14 @@ public sealed class CurrentUser
     public CurrentUser(IHttpContextAccessor accessor)
     {
         var principal = accessor.HttpContext?.User;
-        // Supabase đặt user id ở claim `sub`. ASP.NET map `sub` sang NameIdentifier,
-        // nên phải thử cả hai tuỳ cấu hình MapInboundClaims.
+        // Supabase puts the user id in `sub`. ASP.NET may map `sub` to NameIdentifier,
+        // so try both depending on how MapInboundClaims is configured.
         var raw = principal?.FindFirstValue("sub")
                   ?? principal?.FindFirstValue(ClaimTypes.NameIdentifier);
 
         Id = Guid.TryParse(raw, out var id) ? id : Guid.Empty;
     }
 
-    /// <summary>Chưa đăng nhập hoặc token không có `sub` hợp lệ.</summary>
+    /// <summary>Not signed in, or the token carries no usable `sub`.</summary>
     public bool IsAnonymous => Id == Guid.Empty;
 }

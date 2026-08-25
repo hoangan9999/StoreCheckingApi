@@ -31,7 +31,8 @@ public class AppDbContext : DbContext
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
             e.HasIndex(x => new { x.UserId, x.Day }).IsUnique();
 
-            // Thay cho RLS: mọi truy vấn tự lọc theo chủ sở hữu, kể cả khi quên viết Where.
+            // Stands in for row level security: every query filters by owner even if
+            // the calling code forgets its Where clause.
             e.HasQueryFilter(x => x.UserId == _user.Id);
         });
 

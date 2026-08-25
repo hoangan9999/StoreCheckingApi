@@ -1,18 +1,19 @@
 namespace StoreChecking.Api.Models;
 
 /// <summary>
-/// Một ô ngày trong lịch làm. Chỉ ô có ghi chú hoặc có màu mới tồn tại dòng trong DB.
-/// <para><c>Color</c> là KHOÁ màu ('vang', 'luc'…), không phải mã hex — để ô tô màu
-/// hợp cả giao diện sáng lẫn tối bên phía Angular.</para>
+/// One day cell in the work calendar. A row exists only when the cell has a note
+/// or a colour — empty cells are deleted rather than stored.
+/// <para><c>Color</c> holds a colour KEY ('vang', 'luc', …), not a hex code, so the
+/// Angular side can render it correctly in both light and dark themes.</para>
 /// </summary>
 public class WorkDay
 {
     public Guid Id { get; set; }
 
-    /// <summary>Chủ sở hữu. Lấy từ claim `sub` của token, KHÔNG nhận từ client.</summary>
+    /// <summary>Owner. Comes from the token's `sub` claim, NEVER from the client.</summary>
     public Guid UserId { get; set; }
 
-    /// <summary>Ngày cụ thể (chỉ phần ngày, không giờ).</summary>
+    /// <summary>The calendar day (date only, no time component).</summary>
     public DateOnly Day { get; set; }
 
     public string Note { get; set; } = "";
