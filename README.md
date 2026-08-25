@@ -83,9 +83,23 @@ Dữ liệu cũ trên Supabase **không tự chuyển sang** — cần một l�
 
 ## Đã kiểm chứng / chưa
 
-**Đã:** build sạch (0 warning, 0 error); API khởi động được; `/health` trả lời; gọi không
-token hoặc token bịa đều bị chặn 401; CORS cho đúng origin đã khai và từ chối origin lạ;
-issuer khai trong code **khớp chính xác** với issuer Supabase công bố.
+Chạy thật với PostgreSQL 16 trong Docker, **20/20 kiểm tra đạt**:
 
-**Chưa:** chưa chạy được với database thật (máy chưa bật Docker), nên phần EF ánh xạ bảng
-và các truy vấn **chưa ai chạy thử**. Cũng chưa thử với một token thật đang đăng nhập.
+**Hạ tầng** — build sạch (0 warning, 0 error); Postgres tự chạy `db/*.sql` lần đầu và tạo
+đủ 2 bảng; API nối được DB (`/health` → `{"ok":true,"db":true}`).
+
+**Xác thực** — gọi không token hoặc token bịa đều bị chặn 401; CORS cho đúng origin đã
+khai và từ chối origin lạ; issuer khai trong code **khớp chính xác** với issuer Supabase
+công bố ở `openid-configuration`.
+
+**EF ánh xạ** — insert/select chạy đúng; `DateOnly` qua Postgres **không bị lệch ngày** ở
+múi giờ +07; `id` và `created_at` được DB sinh; ràng buộc `unique (user_id, day)` chặn
+được bản ghi trùng.
+
+**Cách ly dữ liệu (phần thay RLS)** — user B không đọc được ô ngày lẫn ghi chú tháng của
+user A; **kể cả khi biết chính xác Id của dòng đó cũng không lấy được**; A không xoá được
+dòng của B. Hai user cùng nằm chung một bảng nhưng không thấy nhau.
+
+**Chưa:** tầng HTTP của các endpoint lịch (upsert ô ngày, xoá dòng khi ô rỗng, phân tích
+chuỗi ngày) **chưa chạy thử với token thật** — mới test thẳng ở tầng EF. Cần một lần đăng
+nhập thật để gọi hết 6 endpoint.
