@@ -46,10 +46,14 @@ Cần đặt biến môi trường trước (hoặc dùng `dotnet user-secrets`)
 
 ## Chạy trên NAS
 
-1. Chép cả thư mục này vào NAS, ví dụ `/volume1/docker/api/`
+1. Chép cả thư mục này vào NAS: `/volume1/docker/storechecking/`
+   (mỗi app một thư mục, giống `solar` và `nas-uploader` đang có)
 2. Chép `.env.example` thành `.env`, điền mật khẩu DB và `SUPABASE_URL`
 3. Container Manager → Project → chọn thư mục → **Build**
 4. Kiểm tra: `http://IP-NAS:8140/health` → `{"ok":true,"db":true}`
+
+Container đặt tên `storechecking-api` và `storechecking-db` — cùng kiểu tiền tố với
+`solar-mqtt` / `solar-lxp` / `solar-web` để dễ phân biệt trong Container Manager.
 
 Postgres tự chạy `db/*.sql` **lần đầu** khi thư mục `pgdata` còn trống. Sau đó nó bỏ qua,
 nên muốn đổi schema thì phải tự chạy SQL, hoặc xoá `pgdata` (mất hết dữ liệu).

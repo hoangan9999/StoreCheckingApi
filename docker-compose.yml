@@ -1,4 +1,8 @@
 # Runs on the Synology NAS (Container Manager -> Project).
+# Deploy path: /volume1/docker/storechecking  — one folder per app, matching the
+# existing `solar` and `nas-uploader` folders. Container names are prefixed the same
+# way `solar-*` containers are, so they stay distinguishable in Container Manager.
+#
 # Before building: create a .env file next to this one (see .env.example).
 #
 # Port 8140 was picked to avoid the services already running on this NAS:
@@ -11,9 +15,9 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  api-db:
+  db:
     image: postgres:16-alpine
-    container_name: api-db
+    container_name: storechecking-db
     restart: unless-stopped
     logging: *default-logging
     environment:
@@ -37,14 +41,14 @@ services:
 
   api:
     build: .
-    container_name: api
+    container_name: storechecking-api
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      api-db:
+      db:
         condition: service_healthy
     environment:
-      ConnectionStrings__Postgres: "Host=api-db;Port=5432;Database=storechecking;Username=${DB_USER};Password=${DB_PASSWORD}"
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=storechecking;Username=${DB_USER};Password=${DB_PASSWORD}"
       # Only used to fetch the public key that validates tokens. No data is stored on Supabase.
       Auth__SupabaseUrl: ${SUPABASE_URL}
       # Origins allowed to call this API, comma separated.

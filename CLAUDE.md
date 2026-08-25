@@ -18,6 +18,10 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
   của Supabase — quên là lộ dữ liệu giữa các user, và không có lưới nào đỡ.
 - `user_id` **luôn** lấy từ claim `sub` của token. Không bao giờ nhận từ body hay query.
 - Tắt tiến trình API trước khi build bằng Visual Studio, không thì nó khoá file `.exe`.
+- **Đặt tên trên NAS:** mỗi app một thư mục trong `/volume1/docker/` đặt theo tên app
+  (`solar`, `nas-uploader`, `storechecking`), và container đặt tiền tố theo tên app
+  (`solar-web`, `storechecking-api`). Tên trống trơn kiểu `api` sẽ đụng ngay khi có app
+  thứ hai.
 
 ---
 
