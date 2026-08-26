@@ -19,6 +19,11 @@ public static class EnglishEndpoints
     private static int Clamp(int? limit) =>
         limit is null or < 1 ? 50 : Math.Min(limit.Value, MaxPageSize);
 
+    // Paging MUST order by something unique. created_at alone is not: rows written in the
+    // same transaction share it exactly (now() is transaction time), and ties make the
+    // order undefined between queries — page 2 then repeats rows already shown on page 1.
+    // Id breaks the tie and gives a total, stable order.
+
     public static RouteGroupBuilder MapEnglish(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/english").RequireAuthorization().WithTags("Tiếng Anh");
@@ -33,7 +38,7 @@ public static class EnglishEndpoints
 
             var total = await db.EnglishWords.CountAsync();
             var rows = await db.EnglishWords
-                .OrderByDescending(x => x.CreatedAt)
+                .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
                 .Skip(skip).Take(take)
                 .Select(x => new EnglishWordDto(x.Id, x.Word, x.Data.RootElement, x.CreatedAt))
                 .ToListAsync();
@@ -96,7 +101,7 @@ public static class EnglishEndpoints
 
             var total = await query.CountAsync();
             var rows = await query
-                .OrderByDescending(x => x.CreatedAt)
+                .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
                 .Skip(skip).Take(take)
                 .Select(x => new SavedSentenceDto(x.Id, x.Text, x.Note, x.CreatedAt))
                 .ToListAsync();
