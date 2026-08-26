@@ -136,6 +136,35 @@ if (swaggerEnabled)
 }
 
 app.UseCors();
+
+// Turn an unhandled exception into a readable JSON 500 instead of an empty one.
+//
+// Must sit AFTER UseCors. The built-in handling clears the response before writing the
+// 500, which throws away the CORS headers with it — and a 500 without those headers
+// reaches the browser as a plain "failed to fetch", so the real cause never leaves the
+// server. Writing the response here keeps the headers UseCors already added.
+app.Use(async (ctx, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Lỗi chưa bắt ở {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+
+        // Response already on the wire — nothing left to change.
+        if (ctx.Response.HasStarted) throw;
+
+        ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await ctx.Response.WriteAsJsonAsync(new
+        {
+            error = "Máy chủ gặp lỗi khi xử lý yêu cầu.",
+            traceId = ctx.TraceIdentifier,
+        });
+    }
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 

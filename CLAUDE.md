@@ -18,6 +18,11 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
   của Supabase — quên là lộ dữ liệu giữa các user, và không có lưới nào đỡ.
 - `user_id` **luôn** lấy từ claim `sub` của token. Không bao giờ nhận từ body hay query.
 - Tắt tiến trình API trước khi build bằng Visual Studio, không thì nó khoá file `.exe`.
+- **Không đụng `.RootElement` bên trong câu LINQ.** Cột `jsonb` ánh xạ sang `JsonDocument`;
+  viết `x.Data.RootElement` trong `Select(...)` làm EF đòi đọc cột thành `JsonElement?` rồi
+  ngã ngay lúc dựng truy vấn: *"No coercion operator is defined between types 'JsonDocument'
+  and 'JsonElement?'"*. Cách đúng: chiếu cột ra trước (`.Select(x => new { x.Id, x.Data })`)
+  rồi lấy `RootElement` trong bộ nhớ. Dựng object thường (ngoài LINQ) thì vẫn dùng được.
 - **Thư mục bind mount phải có sẵn trên NAS.** Container Manager của Synology không tự
   tạo như Docker trên Linux — thiếu là container chết với `Bind mount failed`. Thư mục dữ
   liệu nào cũng phải ship kèm một file `.gitkeep`.
@@ -158,7 +163,7 @@ nằm ở JWT: mọi endpoint dữ liệu đều đòi token Supabase hợp lệ
 
 Hai hướng còn lại nếu sau này muốn bỏ ràng buộc phải bật Tailscale:
 
-- **Tailscale** (đang dùng) — điện thoại phải bật app mới gọi được
+- **Tailscale + Funnel** (đang dùng) — công khai, điện thoại KHÔNG cần bật app
 - **Cloudflare Tunnel** — không cần cài gì trên điện thoại, không mở port, miễn phí.
   ⚠️ Điều khoản Cloudflare cấm dùng bản miễn phí để phục vụ video/file lớn, nên nếu chọn
   hướng này thì **chỉ đẩy API qua đó, video vẫn đi Tailscale như hiện tại**

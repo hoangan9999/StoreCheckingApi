@@ -37,11 +37,23 @@ public static class EnglishEndpoints
             var skip = Math.Max(offset ?? 0, 0);
 
             var total = await db.EnglishWords.CountAsync();
-            var rows = await db.EnglishWords
+
+            // Read the jsonb column as it is, then take RootElement in memory.
+            //
+            // Calling `x.Data.RootElement` INSIDE the projection looks harmless but breaks the
+            // query: EF then wants to read the column as JsonElement? while the property maps to
+            // JsonDocument, and gives up while compiling the query with
+            //   "No coercion operator is defined between types 'JsonDocument' and 'JsonElement?'"
+            // Nothing catches that, so the endpoint answered a bare 500 with an empty body.
+            var raw = await db.EnglishWords
                 .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
                 .Skip(skip).Take(take)
-                .Select(x => new EnglishWordDto(x.Id, x.Word, x.Data.RootElement, x.CreatedAt))
+                .Select(x => new { x.Id, x.Word, x.Data, x.CreatedAt })
                 .ToListAsync();
+
+            var rows = raw
+                .Select(x => new EnglishWordDto(x.Id, x.Word, x.Data.RootElement, x.CreatedAt))
+                .ToList();
 
             return Results.Ok(new { total, limit = take, offset = skip, items = rows });
         })
@@ -66,6 +78,8 @@ public static class EnglishEndpoints
             db.EnglishWords.Add(row);
             await db.SaveChangesAsync();
 
+            // Plain object construction, not a LINQ projection, so RootElement is safe here
+            // (see the note in GET /words for why it is not safe there).
             return Results.Created($"/api/english/words/{row.Id}",
                 new EnglishWordDto(row.Id, row.Word, row.Data.RootElement, row.CreatedAt));
         })
