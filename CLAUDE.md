@@ -69,7 +69,7 @@ kể cả khi biết Id).
 
 ---
 
-## Giai đoạn 1 — Lịch làm 🔄 ĐANG LÀM
+## Giai đoạn 1 — Lịch làm ⏸️ DỪNG, ở lại Supabase
 
 Hai bảng: `work_days`, `work_month_notes`.
 
@@ -77,80 +77,67 @@ Hai bảng: `work_days`, `work_month_notes`.
 - [x] 6 endpoint + `/health` + `/api/me`
 - [x] Test tầng EF và cách ly dữ liệu
 - [x] **Deploy lên NAS** — `http://192.168.1.76:8140/health` trả `{"ok":true,"db":true}`
-- [ ] **Test 6 endpoint qua Swagger với token thật** ← đang ở đây
-- [ ] Angular trỏ sang API mới (`work-calendar.component.ts`)
-- [ ] Chuyển dữ liệu cũ từ Supabase sang (bảng đã tồn tại bên đó, có thể có dữ liệu thật)
-- [ ] Bỏ `listWorkDays` / `saveWorkDay` / `*MonthNote*` khỏi `supabase.service.ts`
+- ~~Angular trỏ sang API mới~~ — KHÔNG làm nữa, Lịch làm ở lại Supabase
+
+API lịch làm vẫn chạy trên NAS và vẫn hoạt động, chỉ là Angular không gọi tới. Giữ lại
+làm nền, không xoá.
 
 **Lưu ý:** hành vi "ô không ghi chú và không màu thì XOÁ dòng" là hành vi phá dữ liệu —
 cần test kỹ ở bước Swagger.
 
 ---
 
-## Giai đoạn 2 — Hạ tầng deploy ⬜ CHƯA
+## Giai đoạn 2 — Tiếng Anh 🔄 ĐANG LÀM
 
-Làm khi đã chắc hướng .NET đi tiếp.
+Hai bảng: `english_words`, `speaking_saved`.
 
-- [ ] Build image ở máy, đẩy lên `ghcr.io` (NAS yếu, build tại chỗ dễ hết RAM)
-- [ ] Đổi `docker-compose.yml` từ `build: .` sang `image: ghcr.io/...`
-- [ ] Xác nhận kiến trúc CPU của NAS (x86_64 hay ARM) để build đúng
-- [ ] Sao lưu định kỳ `pgdata` — Supabase tự lo việc này, tự dựng thì không
+**Đây là tính năng DUY NHẤT còn chuyển sang .NET.** Lý do: dữ liệu tích dần theo năm vì
+luyện hằng ngày, và nó không liên quan gì tới khách hàng nên hỏng cũng không ảnh hưởng ai.
 
----
+- [x] Schema `db/002-english.sql`
+- [x] 6 endpoint (từ vựng + câu đã lưu), có phân trang và tìm kiếm
+- [ ] **Test tầng EF và cách ly dữ liệu** ← đang ở đây (cần bật Docker Desktop)
+- [ ] Nạp `db/002-english.sql` vào Postgres trên NAS (DB đã có dữ liệu nên KHÔNG tự chạy)
+- [ ] Test qua Swagger với token thật
+- [ ] Chuyển dữ liệu cũ từ Supabase sang
+- [ ] Angular trỏ sang API mới (`english.component.ts`, `speaking.component.ts`)
+- [ ] Bỏ `listEnglishWords` / `addEnglishWord` / `*SavedSentence*` khỏi `supabase.service.ts`
 
-## Giai đoạn 3 — Các tính năng nhỏ ⬜ CHƯA
-
-Làm trước vì ít dữ liệu, hỏng cũng không mất gì.
-
-- [ ] **Luyện nói** — `speaking_saved`
-- [ ] **Tiếng Anh** — `english_words`
-- [ ] **Ghi chú** — `notes`
-
----
-
-## Giai đoạn 4 — Tính năng vừa ⬜ CHƯA
-
-- [ ] **Đơn hàng** — `orders` (có cả trang đặt hàng công khai, không cần đăng nhập)
-- [ ] **Đóng gói / Video** — `packing_videos`
+Phần **sinh câu bằng AI** (`/api/english`, `/api/speaking`) **giữ nguyên trên Vercel** —
+nó không đụng database, và `GEMINI_API_KEY` đang ở đó rồi. Không có lý do gì phải chuyển.
 
 ---
 
-## Giai đoạn 5 — Chi tiêu ⬜ CHƯA
+## ❌ ĐÃ QUYẾT: các tính năng khác KHÔNG chuyển
 
-- [ ] `expense_categories`, `expenses`, `monthly_income`
-- [ ] 2 view: `v_expense_month_category`, `v_expense_month_total`
+Quyết định ngày 2026-08-25. Kho hàng, chi tiêu, đơn hàng, marketing, video, ghi chú
+**ở lại Supabase vĩnh viễn**.
 
----
+Lý do:
 
-## Giai đoạn 6 — Kho hàng ⬜ CHƯA
+- Chuyển không mang lại tính năng mới nào — chỉ là viết lại 81 hàm để có đúng thứ đang có
+- Không có nỗi đau nào cần chữa: không đụng trần free tier, không vấn đề chi phí
+- Đưa về NAS thì mạng nhà thành điểm chết duy nhất; hiện app chạy bất kể nhà thế nào
+- **Trang đặt hàng `/order` là trang công khai, khách quét QR để dùng** — khách không thể
+  cài Tailscale, và Vercel không thể nằm trong tailnet. Chuyển `orders` về NAS là giết
+  tính năng có khách thật đang dùng
+- Mất RLS: bên Supabase database tự chặn rò rỉ; bên .NET là quy ước do người nhớ
+- Chủ repo đã có sẵn cơ chế sao lưu dữ liệu
 
-Dữ liệu giá trị nhất, để sau cùng.
-
-- [ ] `batches`, `products`, `sales`, `product_damages`
-- [ ] 2 view: `batch_summary`, `product_stock`
-- [ ] Trigger chặn bán quá tồn (bên Supabase đang là trigger trong DB)
-
----
-
-## Giai đoạn 7 — Marketing ⬜ CHƯA
-
-Phức tạp nhất vì có lưu file.
-
-- [ ] `marketing`, `marketing_groups`, `marketing_posts`, `marketing_post_targets`,
-      `post_queue`
-- [ ] **Ảnh** — hiện dùng Supabase Storage. Chuyển sang lưu trên NAS; `nas-uploader` đã
-      làm sẵn việc nhận upload và phục vụ file, tận dụng lại
+Nguyên tắc thay thế: **đặt dữ liệu ở nơi nó thuộc về.** Thứ gắn với nhà (solar, video,
+file lớn) thì ở NAS. Thứ cần chạy mọi lúc mọi nơi thì ở cloud.
 
 ---
 
-## Giai đoạn 8 — Bỏ hẳn Supabase ⬜ CHƯA
+## Cách truy cập API từ ngoài — CHƯA QUYẾT
 
-Chỉ làm khi tất cả giai đoạn trên đã xong và chạy ổn định vài tuần.
+Hiện API chỉ gọi được trong mạng LAN. Muốn dùng tiếng Anh khi ra ngoài thì phải chọn một:
 
-- [ ] Tự làm đăng nhập (ASP.NET Core Identity + JWT)
-- [ ] Đổi `Auth:SupabaseUrl` sang issuer của mình
-- [ ] Xoá `supabase.service.ts` và gói `@supabase/supabase-js` khỏi Angular
-- [ ] Xuất toàn bộ dữ liệu Supabase lần cuối rồi đóng project
+- **Tailscale** — điện thoại phải bật app mới gọi được
+- **Cloudflare Tunnel** — không cần cài gì trên điện thoại, không mở port, miễn phí.
+  ⚠️ Điều khoản Cloudflare cấm dùng bản miễn phí để phục vụ video/file lớn, nên nếu chọn
+  hướng này thì **chỉ đẩy API qua đó, video vẫn đi Tailscale như hiện tại**
+- **DDNS Synology + Let's Encrypt** — phải mở port 443 ra internet
 
 ---
 
@@ -160,5 +147,5 @@ Chỉ làm khi tất cả giai đoạn trên đã xong và chạy ổn định v
       đã đặt `ClockSkew = 60s` nên tính năng nào chuyển sang đây là hết lỗi — nhưng gốc
       rễ thì vẫn chưa rõ.
 - [ ] Angular còn **3 migration Supabase chưa chạy**: `migration-work-calendar.sql`,
-      `migration-work-month-notes.sql`, `migration-speaking-saved.sql`. Nếu Lịch làm
-      chuyển hẳn sang .NET thì hai cái đầu thành thừa.
+      `migration-work-month-notes.sql`, `migration-speaking-saved.sql`. Vì Lịch làm nay
+      ở lại Supabase, **cả ba đều vẫn cần chạy**.

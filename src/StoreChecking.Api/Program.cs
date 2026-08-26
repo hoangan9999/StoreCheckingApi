@@ -163,5 +163,6 @@ app.MapGet("/api/me", (CurrentUser me, ClaimsPrincipal user) => Results.Ok(new
 .WithTags("Hệ thống");
 
 app.MapWorkCalendar();
+app.MapEnglish();
 
 app.Run();

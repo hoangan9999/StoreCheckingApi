@@ -15,6 +15,8 @@ public class AppDbContext : DbContext
 
     public DbSet<WorkDay> WorkDays => Set<WorkDay>();
     public DbSet<WorkMonthNote> WorkMonthNotes => Set<WorkMonthNote>();
+    public DbSet<EnglishWord> EnglishWords => Set<EnglishWord>();
+    public DbSet<SavedSentence> SavedSentences => Set<SavedSentence>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -48,6 +50,34 @@ public class AppDbContext : DbContext
             e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
             e.HasIndex(x => new { x.UserId, x.Period, x.Sort });
+
+            e.HasQueryFilter(x => x.UserId == _user.Id);
+        });
+
+        b.Entity<EnglishWord>(e =>
+        {
+            e.ToTable("english_words");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.UserId).HasColumnName("user_id");
+            e.Property(x => x.Word).HasColumnName("word");
+            e.Property(x => x.Data).HasColumnName("data").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
+
+            e.HasQueryFilter(x => x.UserId == _user.Id);
+        });
+
+        b.Entity<SavedSentence>(e =>
+        {
+            e.ToTable("speaking_saved");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.UserId).HasColumnName("user_id");
+            e.Property(x => x.Text).HasColumnName("text");
+            e.Property(x => x.Note).HasColumnName("note").HasDefaultValue("");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
 
             e.HasQueryFilter(x => x.UserId == _user.Id);
         });
