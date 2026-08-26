@@ -36,6 +36,20 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
 4. **Xong hẳn rồi mới sang cái tiếp.** Xong = đã deploy, Angular đã trỏ sang, dữ liệu cũ
    đã chuyển, và bỏ được lời gọi Supabase của tính năng đó.
 
+## Chuyển dữ liệu
+
+Hai bên đều là PostgreSQL nên `pg_dump` sang thẳng được.
+
+**Chuyển đúng lúc CẮT SANG, không chuyển trước.** Chuyển sớm thì Supabase vẫn nhận ghi
+mới, hai bên lệch nhau, và tới lúc cắt phải làm lại từ đầu.
+
+- Chỉ dump **dữ liệu** (`--data-only`), KHÔNG dump schema — schema bên NAS đã bỏ
+  `auth.uid()` và RLS nên dump nguyên sẽ lỗi vì tham chiếu `auth.users`.
+- `user_id` khớp sẵn giữa hai bên vì API .NET dùng lại chính JWT của Supabase, claim `sub`
+  là cùng một UUID. Không phải ánh xạ lại gì.
+- View và trigger không có dữ liệu để chuyển — phải viết lại trong `db/*.sql`.
+- Ảnh trên Supabase Storage KHÔNG nằm trong Postgres, phải tải riêng.
+
 ---
 
 ## Giai đoạn 0 — Nền tảng ✅ DONE
@@ -62,10 +76,10 @@ Hai bảng: `work_days`, `work_month_notes`.
 - [x] Schema `db/001-work-calendar.sql`
 - [x] 6 endpoint + `/health` + `/api/me`
 - [x] Test tầng EF và cách ly dữ liệu
+- [x] **Deploy lên NAS** — `http://192.168.1.76:8140/health` trả `{"ok":true,"db":true}`
 - [ ] **Test 6 endpoint qua Swagger với token thật** ← đang ở đây
-- [ ] Deploy lên NAS, `/health` trả `db:true`
 - [ ] Angular trỏ sang API mới (`work-calendar.component.ts`)
-- [ ] Chuyển dữ liệu cũ từ Supabase sang (nếu có)
+- [ ] Chuyển dữ liệu cũ từ Supabase sang (bảng đã tồn tại bên đó, có thể có dữ liệu thật)
 - [ ] Bỏ `listWorkDays` / `saveWorkDay` / `*MonthNote*` khỏi `supabase.service.ts`
 
 **Lưu ý:** hành vi "ô không ghi chú và không màu thì XOÁ dòng" là hành vi phá dữ liệu —
