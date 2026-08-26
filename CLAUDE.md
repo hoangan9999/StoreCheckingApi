@@ -21,6 +21,12 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
 - **Thư mục bind mount phải có sẵn trên NAS.** Container Manager của Synology không tự
   tạo như Docker trên Linux — thiếu là container chết với `Bind mount failed`. Thư mục dữ
   liệu nào cũng phải ship kèm một file `.gitkeep`.
+- **Build .NET trên NAS làm cả NAS ì trong 5-15 phút.** Đo thật: lúc đang build,
+  `nas-uploader` trả trang mất 2-6 giây; build xong còn 0.2-1.2 giây — chậm gấp ~10 lần.
+  Ảnh hưởng tới cả upload video từ điện thoại. Các container chạy nền (Postgres, .NET,
+  Tailscale) thì KHÔNG phải vấn đề. Muốn dứt điểm thì build image ở máy rồi đẩy sang.
+- **Container Manager: Stop KHÔNG xoá container.** Muốn xoá image phải xoá container
+  trước (tab Container → Delete), nếu không sẽ báo "currently used by".
 - **Đặt tên trên NAS:** mỗi app một thư mục trong `/volume1/docker/` đặt theo tên app
   (`solar`, `nas-uploader`, `storechecking`), và container đặt tiền tố theo tên app
   (`solar-web`, `storechecking-api`). Tên trống trơn kiểu `api` sẽ đụng ngay khi có app
@@ -96,12 +102,16 @@ luyện hằng ngày, và nó không liên quan gì tới khách hàng nên hỏ
 
 - [x] Schema `db/002-english.sql`
 - [x] 6 endpoint (từ vựng + câu đã lưu), có phân trang và tìm kiếm
-- [ ] **Test tầng EF và cách ly dữ liệu** ← đang ở đây (cần bật Docker Desktop)
-- [ ] Nạp `db/002-english.sql` vào Postgres trên NAS (DB đã có dữ liệu nên KHÔNG tự chạy)
-- [ ] Test qua Swagger với token thật
-- [ ] Chuyển dữ liệu cũ từ Supabase sang
+- [x] Test tầng EF và cách ly dữ liệu — 23/23 đạt
+- [x] Nạp `db/002-english.sql` vào Postgres trên NAS (chạy tay, DB đã có dữ liệu)
+- [x] **Deploy lên NAS + Tailscale HTTPS** — `https://storechecking.tail631d54.ts.net`
+      trả 401 ở mọi route tiếng Anh (route có, chỉ thiếu token)
+- [ ] **Chuyển dữ liệu cũ từ Supabase sang** ← đang ở đây (cần mật khẩu DB Supabase)
 - [ ] Angular trỏ sang API mới (`english.component.ts`, `speaking.component.ts`)
 - [ ] Bỏ `listEnglishWords` / `addEnglishWord` / `*SavedSentence*` khỏi `supabase.service.ts`
+
+**URL API:** `https://storechecking.tail631d54.ts.net` (chỉ gọi được khi thiết bị đã bật
+Tailscale). Chứng chỉ Let's Encrypt thật, nên app HTTPS trên Vercel gọi được.
 
 Phần **sinh câu bằng AI** (`/api/english`, `/api/speaking`) **giữ nguyên trên Vercel** —
 nó không đụng database, và `GEMINI_API_KEY` đang ở đó rồi. Không có lý do gì phải chuyển.
@@ -129,11 +139,14 @@ file lớn) thì ở NAS. Thứ cần chạy mọi lúc mọi nơi thì ở clou
 
 ---
 
-## Cách truy cập API từ ngoài — CHƯA QUYẾT
+## Cách truy cập API từ ngoài — ĐÃ CHỌN TAILSCALE
 
-Hiện API chỉ gọi được trong mạng LAN. Muốn dùng tiếng Anh khi ra ngoài thì phải chọn một:
+Đang dùng Tailscale: `https://storechecking.tail631d54.ts.net`. Thiết bị nào muốn dùng tab
+tiếng Anh thì phải bật Tailscale. Angular sẽ kiểm tra kết nối khi vào tab và báo nếu chưa bật.
 
-- **Tailscale** — điện thoại phải bật app mới gọi được
+Hai hướng còn lại nếu sau này muốn bỏ ràng buộc phải bật Tailscale:
+
+- **Tailscale** (đang dùng) — điện thoại phải bật app mới gọi được
 - **Cloudflare Tunnel** — không cần cài gì trên điện thoại, không mở port, miễn phí.
   ⚠️ Điều khoản Cloudflare cấm dùng bản miễn phí để phục vụ video/file lớn, nên nếu chọn
   hướng này thì **chỉ đẩy API qua đó, video vẫn đi Tailscale như hiện tại**
