@@ -12,6 +12,13 @@ obj/
 pgdata/*
 !pgdata/.gitkeep
 
+# Tailscale node identity — same reasoning: ship the folder, never its contents.
+ts-state/*
+!ts-state/.gitkeep
+
 # IDE
 .vs/
 .idea/
+
+# Dumps pulled out of Supabase — production data, never commit.
+_migration/

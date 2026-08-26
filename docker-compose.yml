@@ -55,4 +55,33 @@ services:
       Cors__Origins: ${CORS_ORIGINS}
       ASPNETCORE_ENVIRONMENT: Production
     ports:
+      # Published for LAN access and debugging. Traffic from outside the house comes in
+      # through the tailscale service below instead.
       - "8140:8080"
+
+  # Gives the API a real HTTPS certificate on the tailnet:
+  #   https://storechecking.<tailnet>.ts.net
+  # This is REQUIRED, not a nicety: the Angular app is served over HTTPS from Vercel, and
+  # browsers hard-block an HTTPS page from calling a plain http:// address. Without a
+  # valid certificate the app cannot reach this API at all.
+  #
+  # Deliberately no AllowFunnel — unlike nas-uploader, this API must stay reachable only
+  # from inside the tailnet, never from the public internet.
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: storechecking-ts
+    hostname: storechecking            # decides the URL: storechecking.<tailnet>.ts.net
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - api
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=true
+      - TS_SERVE_CONFIG=/config/serve.json
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-config:/config:ro
+    cap_add:
+      - NET_ADMIN
