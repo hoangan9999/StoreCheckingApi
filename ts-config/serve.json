@@ -4,5 +4,6 @@
     "${TS_CERT_DOMAIN}:443": {
       "Handlers": { "/": { "Proxy": "http://api:8080" } }
     }
-  }
+  },
+  "AllowFunnel": { "${TS_CERT_DOMAIN}:443": true }
 }

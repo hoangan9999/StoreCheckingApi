@@ -65,8 +65,14 @@ services:
   # browsers hard-block an HTTPS page from calling a plain http:// address. Without a
   # valid certificate the app cannot reach this API at all.
   #
-  # Deliberately no AllowFunnel — unlike nas-uploader, this API must stay reachable only
-  # from inside the tailnet, never from the public internet.
+  # AllowFunnel is REQUIRED, not optional. Without it the hostname only resolves inside
+  # the tailnet to a private 100.x address, and browsers refuse to let a public HTTPS page
+  # (the app on Vercel) call into a private network — the request is blocked before it is
+  # even sent. Funnel gives the hostname a real public address, which is exactly why
+  # nas-uploader has always worked from the same app.
+  #
+  # Security: every data endpoint requires a valid Supabase JWT, verified against
+  # Supabase's public key. Only /health is open, and it returns nothing sensitive.
   tailscale:
     image: tailscale/tailscale:latest
     container_name: storechecking-ts

@@ -27,6 +27,12 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
   Tailscale) thì KHÔNG phải vấn đề. Muốn dứt điểm thì build image ở máy rồi đẩy sang.
 - **Container Manager: Stop KHÔNG xoá container.** Muốn xoá image phải xoá container
   trước (tab Container → Delete), nếu không sẽ báo "currently used by".
+- **Tailscale phải bật `AllowFunnel`.** Không bật thì tên miền `.ts.net` chỉ phân giải
+  trong tailnet ra IP nội bộ `100.x`, và trình duyệt CẤM trang HTTPS công khai (app trên
+  Vercel) gọi vào mạng nội bộ — request bị chặn trước khi kịp gửi đi, báo
+  `ERR_BLOCKED_BY_CLIENT`. Đây chính là lý do `nas-uploader` chạy được suốt (nó bật Funnel)
+  còn `storechecking` thì không. Cách phân biệt: `dns.google/resolve?name=<host>&type=A`
+  có trả IP công khai hay không.
 - **Đặt tên trên NAS:** mỗi app một thư mục trong `/volume1/docker/` đặt theo tên app
   (`solar`, `nas-uploader`, `storechecking`), và container đặt tiền tố theo tên app
   (`solar-web`, `storechecking-api`). Tên trống trơn kiểu `api` sẽ đụng ngay khi có app
@@ -139,10 +145,16 @@ file lớn) thì ở NAS. Thứ cần chạy mọi lúc mọi nơi thì ở clou
 
 ---
 
-## Cách truy cập API từ ngoài — ĐÃ CHỌN TAILSCALE
+## Cách truy cập API từ ngoài — TAILSCALE + FUNNEL
 
-Đang dùng Tailscale: `https://storechecking.tail631d54.ts.net`. Thiết bị nào muốn dùng tab
-tiếng Anh thì phải bật Tailscale. Angular sẽ kiểm tra kết nối khi vào tab và báo nếu chưa bật.
+`https://storechecking.tail631d54.ts.net`, có bật **Funnel**.
+
+Ban đầu định để tailnet-only cho kín, nhưng KHÔNG KHẢ THI: app phục vụ từ Vercel là trang
+công khai, mà trình duyệt cấm trang công khai gọi vào mạng nội bộ. Bật Funnel là cách duy
+nhất để app trên Vercel gọi được API trên NAS.
+
+Hệ quả kèm theo: **thiết bị không cần bật Tailscale nữa** — địa chỉ đã công khai. Bảo vệ
+nằm ở JWT: mọi endpoint dữ liệu đều đòi token Supabase hợp lệ, chỉ `/health` là mở.
 
 Hai hướng còn lại nếu sau này muốn bỏ ràng buộc phải bật Tailscale:
 
