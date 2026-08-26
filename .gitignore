@@ -16,6 +16,12 @@ pgdata/*
 ts-state/*
 !ts-state/.gitkeep
 
+# Watchtower's GHCR credentials. config.json holds a real token — never commit it.
+# Ship the folder and the example only.
+watchtower/*
+!watchtower/.gitkeep
+!watchtower/config.example.json
+
 # IDE
 .vs/
 .idea/

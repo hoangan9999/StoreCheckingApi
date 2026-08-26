@@ -170,11 +170,16 @@ app.UseAuthorization();
 
 // ---------- Endpoints ----------
 
+// Which build is running, baked into the image at build time (see Dockerfile).
+// This is what makes a deploy verifiable from the outside: tools/deploy.ps1 waits until
+// /health reports the exact version it just pushed, so "deployed" is a fact, not a hope.
+var appVersion = Environment.GetEnvironmentVariable("APP_VERSION") ?? "dev";
+
 // Liveness probe: used by the Docker healthcheck, and tells us whether the DB is reachable.
 app.MapGet("/health", async (AppDbContext db) =>
 {
     var dbOk = await db.Database.CanConnectAsync();
-    return Results.Ok(new { ok = true, db = dbOk });
+    return Results.Ok(new { ok = true, db = dbOk, version = appVersion });
 })
 .WithName("Health")
 .WithSummary("Sống chưa, DB nối được chưa (không cần token)")

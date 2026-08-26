@@ -26,7 +26,7 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
 - **Thư mục bind mount phải có sẵn trên NAS.** Container Manager của Synology không tự
   tạo như Docker trên Linux — thiếu là container chết với `Bind mount failed`. Thư mục dữ
   liệu nào cũng phải ship kèm một file `.gitkeep`.
-- **Build .NET trên NAS làm cả NAS ì trong 5-15 phút.** Đo thật: lúc đang build,
+- **KHÔNG build .NET trên NAS.** Đã bỏ hẳn — xem mục Deploy. Đo thật: lúc đang build,
   `nas-uploader` trả trang mất 2-6 giây; build xong còn 0.2-1.2 giây — chậm gấp ~10 lần.
   Ảnh hưởng tới cả upload video từ điện thoại. Các container chạy nền (Postgres, .NET,
   Tailscale) thì KHÔNG phải vấn đề. Muốn dứt điểm thì build image ở máy rồi đẩy sang.
@@ -117,15 +117,73 @@ luyện hằng ngày, và nó không liên quan gì tới khách hàng nên hỏ
 - [x] Nạp `db/002-english.sql` vào Postgres trên NAS (chạy tay, DB đã có dữ liệu)
 - [x] **Deploy lên NAS + Tailscale HTTPS** — `https://storechecking.tail631d54.ts.net`
       trả 401 ở mọi route tiếng Anh (route có, chỉ thiếu token)
-- [ ] **Chuyển dữ liệu cũ từ Supabase sang** ← đang ở đây (cần mật khẩu DB Supabase)
-- [ ] Angular trỏ sang API mới (`english.component.ts`, `speaking.component.ts`)
+- [x] **Chuyển dữ liệu cũ từ Supabase sang** — 17 từ + 1 câu, đếm trước/sau khớp nhau.
+      Dữ liệu gốc trên Supabase vẫn còn nguyên, chưa xoá.
+- [x] Angular trỏ sang API mới (`english-api.service.ts`)
+- [x] **Bật Funnel + sửa lỗi 500 ở `GET /words`** — endpoint này chưa từng chạy được:
+      `x.Data.RootElement` nằm trong câu LINQ làm EF ngã lúc dựng truy vấn
 - [ ] Bỏ `listEnglishWords` / `addEnglishWord` / `*SavedSentence*` khỏi `supabase.service.ts`
+      — đã không còn chỗ nào gọi, chỉ là code chết ← còn lại đúng việc này
 
-**URL API:** `https://storechecking.tail631d54.ts.net` (chỉ gọi được khi thiết bị đã bật
-Tailscale). Chứng chỉ Let's Encrypt thật, nên app HTTPS trên Vercel gọi được.
+**URL API:** `https://storechecking.tail631d54.ts.net`, có Funnel nên gọi được từ mạng bất
+kỳ, thiết bị **không cần bật Tailscale**. Chứng chỉ Let's Encrypt thật.
 
 Phần **sinh câu bằng AI** (`/api/english`, `/api/speaking`) **giữ nguyên trên Vercel** —
 nó không đụng database, và `GEMINI_API_KEY` đang ở đó rồi. Không có lý do gì phải chuyển.
+
+---
+
+## Deploy — build ở PC, NAS tự cập nhật
+
+**NAS không build .NET nữa.** Build trên NAS ăn CPU 5-15 phút và kéo mọi thứ khác ì theo,
+kể cả upload video từ điện thoại. Nay PC build, GHCR giữ ảnh, watchtower trên NAS tự kéo
+về rồi khởi động lại API.
+
+Deploy = một lệnh trên PC:
+
+```
+.\tools\deploy.ps1
+```
+
+Script build ảnh, gắn hai nhãn (`latest` và mã commit), đẩy lên GHCR, rồi **chờ tới khi
+`/health` trên NAS báo đúng mã commit vừa đẩy** mới báo xong. "Đã deploy" là thứ đo được
+chứ không phải hy vọng. Ảnh riêng tư, chỉ mình kéo được.
+
+### Cài một lần
+
+1. **PC** — tạo GitHub token (Settings → Developer settings → Personal access tokens →
+   Tokens (classic)) có quyền `write:packages` + `read:packages`, rồi `docker login ghcr.io`.
+2. **PC** — chạy `.\tools\deploy.ps1 -NoVerify` để đẩy ảnh đầu tiên lên GHCR.
+3. **NAS** — tạo `/volume1/docker/storechecking/watchtower/config.json` theo mẫu
+   `watchtower/config.example.json`. Chuỗi `auth` là base64 của `tênGitHub:token`, sinh
+   trên PC bằng:
+   `[Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("hoangan9999:TOKEN"))`
+   File này chứa token thật — `.gitignore` đã chặn, đừng bao giờ commit.
+   Phải tạo TRƯỚC khi chạy project: thiếu file thì Docker tự tạo một thư mục cùng tên và
+   watchtower lặng lẽ không đăng nhập được.
+4. **NAS** — đưa ảnh về máy lần đầu (watchtower chỉ cập nhật container đã có, không tạo mới):
+   Container Manager → Registry → Settings → thêm `https://ghcr.io` kèm đăng nhập.
+   Nếu Container Manager không kéo nổi ảnh riêng tư thì dùng cách chắc chắn được — trên PC:
+   `docker save ghcr.io/hoangan9999/storechecking-api:latest -o storechecking-api.tar`
+   rồi copy file tar lên NAS, Container Manager → Image → Add → Add From File.
+5. **NAS** — copy `docker-compose.yml` mới lên, Project → Build.
+
+Xong bước 5 là hết đụng vào NAS. Từ đó: sửa code → `.\tools\deploy.ps1` → xong.
+
+### Quay lại bản cũ
+
+Mỗi lần deploy để lại một nhãn theo mã commit nên lùi được:
+
+```
+docker pull ghcr.io/hoangan9999/storechecking-api:<commit>
+docker tag  ghcr.io/hoangan9999/storechecking-api:<commit> ghcr.io/hoangan9999/storechecking-api:latest
+docker push ghcr.io/hoangan9999/storechecking-api:latest
+```
+
+### Thư mục trên NAS cần gì
+
+Chỉ còn `docker-compose.yml`, `.env`, `db/`, `pgdata/`, `ts-config/`, `ts-state/`,
+`watchtower/`. **`src/` và `Dockerfile` không còn cần trên NAS** vì NAS không build nữa.
 
 ---
 

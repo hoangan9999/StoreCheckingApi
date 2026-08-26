@@ -40,10 +40,21 @@ services:
       - "5432"
 
   api:
-    build: .
+    # Built on the PC and pushed to GHCR — see tools/deploy.ps1. The NAS must NEVER build
+    # .NET again: a build pins the CPU for 5-15 minutes and makes the whole NAS unusable,
+    # including uploads from the phone.
+    #
+    # No pull_policy on purpose. The default ("missing") uses the image already on the NAS,
+    # so Container Manager can start the project without registry credentials of its own —
+    # watchtower carries the credentials and does every update from then on.
+    image: ghcr.io/hoangan9999/storechecking-api:latest
     container_name: storechecking-api
     restart: unless-stopped
     logging: *default-logging
+    labels:
+      # Watchtower only touches containers carrying this scope, so the other apps on this
+      # NAS (solar, nas-uploader) are never restarted behind your back.
+      com.centurylinklabs.watchtower.scope: storechecking
     depends_on:
       db:
         condition: service_healthy
@@ -58,6 +69,31 @@ services:
       # Published for LAN access and debugging. Traffic from outside the house comes in
       # through the tailscale service below instead.
       - "8140:8080"
+
+  # Watches GHCR for a newly pushed image, pulls it and restarts the API on its own.
+  # This is what makes deploying one command on the PC with nothing to do on the NAS.
+  #
+  # Needs ./watchtower/config.json — a read-only GHCR token, because the image is private.
+  # That file holds a secret: it is created by hand on the NAS and never committed.
+  # Docker turns a missing bind-mount source into a DIRECTORY, which silently breaks the
+  # login, so create the file BEFORE starting this project.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: storechecking-watchtower
+    restart: unless-stopped
+    logging: *default-logging
+    labels:
+      com.centurylinklabs.watchtower.scope: storechecking
+    environment:
+      # Ignore every container that is not part of this project.
+      WATCHTOWER_SCOPE: storechecking
+      WATCHTOWER_POLL_INTERVAL: 60
+      # Delete the image it replaced, otherwise old builds slowly fill the NAS disk.
+      WATCHTOWER_CLEANUP: "true"
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./watchtower/config.json:/config.json:ro
 
   # Gives the API a real HTTPS certificate on the tailnet:
   #   https://storechecking.<tailnet>.ts.net
