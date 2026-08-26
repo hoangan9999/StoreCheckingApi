@@ -49,8 +49,12 @@ Cần đặt biến môi trường trước (hoặc dùng `dotnet user-secrets`)
 1. Chép cả thư mục này vào NAS: `/volume1/docker/storechecking/`
    (mỗi app một thư mục, giống `solar` và `nas-uploader` đang có)
 2. Chép `.env.example` thành `.env`, điền mật khẩu DB và `SUPABASE_URL`
-3. Container Manager → Project → chọn thư mục → **Build**
-4. Kiểm tra: `http://IP-NAS:8140/health` → `{"ok":true,"db":true}`
+3. **Thư mục `pgdata` phải tồn tại** (dù rỗng) trước khi Build. Container Manager của
+   Synology KHÔNG tự tạo thư mục bind mount như Docker trên Linux — thiếu nó thì container
+   database chết ngay với lỗi `Bind mount failed: ... does not exist`.
+   Repo có sẵn `pgdata/.gitkeep` nên chép cả thư mục là đủ; chép thiếu thì tự tạo tay.
+4. Container Manager → Project → chọn thư mục → **Build**
+5. Kiểm tra: `http://IP-NAS:8140/health` → `{"ok":true,"db":true}`
 
 Container đặt tên `storechecking-api` và `storechecking-db` — cùng kiểu tiền tố với
 `solar-mqtt` / `solar-lxp` / `solar-web` để dễ phân biệt trong Container Manager.

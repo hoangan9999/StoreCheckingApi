@@ -5,7 +5,12 @@ obj/
 
 # Secrets and data — NEVER commit
 .env
-pgdata/
+
+# Keep the pgdata folder itself but never its contents: Synology's Container Manager
+# refuses to auto-create bind mount folders, so an empty folder has to ship with the
+# deploy package.
+pgdata/*
+!pgdata/.gitkeep
 
 # IDE
 .vs/
