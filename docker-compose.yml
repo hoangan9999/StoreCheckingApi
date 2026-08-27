@@ -40,9 +40,10 @@ services:
       - "5432"
 
   api:
-    # Built on the PC and pushed to GHCR — see tools/deploy.ps1. The NAS must NEVER build
-    # .NET again: a build pins the CPU for 5-15 minutes and makes the whole NAS unusable,
-    # including uploads from the phone.
+    # Built by GitHub Actions and pushed to GHCR — see .github/workflows/build-and-push.yml.
+    # Neither machine at home builds .NET: on the NAS a build pins the CPU for 5-15 minutes
+    # and makes the whole NAS unusable, phone uploads included; the PC is a company laptop
+    # where Docker Desktop would need a paid licence.
     #
     # No pull_policy on purpose. The default ("missing") uses the image already on the NAS,
     # so Container Manager can start the project without registry credentials of its own —

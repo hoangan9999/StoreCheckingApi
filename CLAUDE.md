@@ -133,11 +133,17 @@ nó không đụng database, và `GEMINI_API_KEY` đang ở đó rồi. Không c
 
 ---
 
-## Deploy — build ở PC, NAS tự cập nhật
+## Deploy — GitHub build, NAS tự cập nhật
 
-**NAS không build .NET nữa.** Build trên NAS ăn CPU 5-15 phút và kéo mọi thứ khác ì theo,
-kể cả upload video từ điện thoại. Nay PC build, GHCR giữ ảnh, watchtower trên NAS tự kéo
-về rồi khởi động lại API.
+**Không máy nào ở nhà build .NET nữa.**
+
+- NAS không build: ăn CPU 5-15 phút và kéo mọi thứ khác ì theo, kể cả upload video từ
+  điện thoại.
+- PC cũng không build: đây là **máy công ty**, mà Docker Desktop trên máy công ty là bản
+  có phí. Nên PC không cần cài Docker gì hết.
+
+Nay **GitHub Actions build**, GHCR giữ ảnh, watchtower trên NAS tự kéo về rồi khởi động
+lại API. Workflow: `.github/workflows/build-and-push.yml`, chạy mỗi lần push lên `master`.
 
 Deploy = một lệnh trên PC:
 
@@ -145,40 +151,61 @@ Deploy = một lệnh trên PC:
 .\tools\deploy.ps1
 ```
 
-Script build ảnh, gắn hai nhãn (`latest` và mã commit), đẩy lên GHCR, rồi **chờ tới khi
-`/health` trên NAS báo đúng mã commit vừa đẩy** mới báo xong. "Đã deploy" là thứ đo được
-chứ không phải hy vọng. Ảnh riêng tư, chỉ mình kéo được.
+Script đẩy commit lên GitHub (đó là thứ khởi động build), rồi **chờ tới khi `/health`
+trên NAS báo đúng mã commit vừa đẩy** mới báo xong. "Đã deploy" là thứ đo được chứ không
+phải hy vọng.
+
+**Hệ quả của việc bỏ build ở PC: không deploy được thứ chưa commit.** GitHub chỉ build
+được cái đã đẩy lên, nên script từ chối chạy khi cây làm việc còn bẩn. Không còn bản
+`-dirty` như trước.
+
+Mã commit rút gọn **cố định 7 ký tự** ở cả hai đầu (`${GITHUB_SHA:0:7}` trong workflow,
+`git rev-parse --short=7` trong script). Độ dài mặc định của `--short` tăng dần theo kích
+thước repo — để mặc thì một ngày nào đó hai bên lệch nhau và script chờ mãi một phiên bản
+không bao giờ tồn tại.
 
 ### Cài một lần
 
-1. **PC** — tạo GitHub token (Settings → Developer settings → Personal access tokens →
-   Tokens (classic)) có quyền `write:packages` + `read:packages`, rồi `docker login ghcr.io`.
-2. **PC** — chạy `.\tools\deploy.ps1 -NoVerify` để đẩy ảnh đầu tiên lên GHCR.
-3. **NAS** — tạo `/volume1/docker/storechecking/watchtower/config.json` theo mẫu
+1. **GitHub** — vào tab Actions của repo, bật Actions nếu bị tắt. Không cần tạo secret
+   nào: workflow đẩy ảnh bằng `GITHUB_TOKEN` sẵn có.
+2. **PC** — `git push`, hoặc `.\tools\deploy.ps1 -NoWait`. Xem build chạy ở tab Actions.
+   Xong thì ảnh nằm ở https://github.com/hoangan9999?tab=packages (riêng tư).
+3. **PC** — tạo GitHub token (Settings → Developer settings → Personal access tokens →
+   Tokens (classic)) chỉ cần quyền **`read:packages`** — token này để NAS *kéo* ảnh, không
+   cần quyền ghi.
+4. **NAS** — tạo `/volume1/docker/storechecking/watchtower/config.json` theo mẫu
    `watchtower/config.example.json`. Chuỗi `auth` là base64 của `tênGitHub:token`, sinh
    trên PC bằng:
    `[Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("hoangan9999:TOKEN"))`
    File này chứa token thật — `.gitignore` đã chặn, đừng bao giờ commit.
    Phải tạo TRƯỚC khi chạy project: thiếu file thì Docker tự tạo một thư mục cùng tên và
    watchtower lặng lẽ không đăng nhập được.
-4. **NAS** — đưa ảnh về máy lần đầu (watchtower chỉ cập nhật container đã có, không tạo mới):
-   Container Manager → Registry → Settings → thêm `https://ghcr.io` kèm đăng nhập.
-   Nếu Container Manager không kéo nổi ảnh riêng tư thì dùng cách chắc chắn được — trên PC:
-   `docker save ghcr.io/hoangan9999/storechecking-api:latest -o storechecking-api.tar`
-   rồi copy file tar lên NAS, Container Manager → Image → Add → Add From File.
-5. **NAS** — copy `docker-compose.yml` mới lên, Project → Build.
+5. **NAS** — đưa ảnh về máy lần đầu (watchtower chỉ cập nhật container đã có, không tạo
+   mới): Container Manager → Registry → Settings → thêm `https://ghcr.io`, đăng nhập bằng
+   token ở bước 3.
+   Không có Docker trên PC nên **không còn đường `docker save` + copy file tar**. Nếu
+   Container Manager không kéo nổi ảnh riêng tư thì bật SSH trên NAS rồi làm thẳng ở đó:
+   ```
+   sudo docker login ghcr.io -u hoangan9999
+   sudo docker pull ghcr.io/hoangan9999/storechecking-api:latest
+   ```
+6. **NAS** — copy `docker-compose.yml` mới lên, tạo sẵn thư mục `watchtower/`,
+   Project → Build. Container `storechecking-api` cũ phải **xoá** ở tab Container (Stop
+   không xoá) thì mới bỏ được ảnh NAS tự build trước đây.
 
-Xong bước 5 là hết đụng vào NAS. Từ đó: sửa code → `.\tools\deploy.ps1` → xong.
+Xong bước 6 là hết đụng vào NAS. Từ đó: sửa code → commit → `.\tools\deploy.ps1` → xong.
+
+Kiểm chứng: `curl https://storechecking.tail631d54.ts.net/health` phải có trường
+`version` đúng bằng mã commit. Còn trả `{"ok":true,"db":true}` trống trơn nghĩa là NAS
+vẫn chạy ảnh cũ nó tự build.
 
 ### Quay lại bản cũ
 
-Mỗi lần deploy để lại một nhãn theo mã commit nên lùi được:
+Mỗi lần build để lại một nhãn theo mã commit. Không có Docker ở PC nên lùi bản làm trên
+GitHub: tab **Actions** → chọn lần chạy của commit muốn quay lại → **Re-run all jobs**.
+Nó build lại đúng commit đó và gắn `latest`, watchtower kéo về trong một phút.
 
-```
-docker pull ghcr.io/hoangan9999/storechecking-api:<commit>
-docker tag  ghcr.io/hoangan9999/storechecking-api:<commit> ghcr.io/hoangan9999/storechecking-api:latest
-docker push ghcr.io/hoangan9999/storechecking-api:latest
-```
+Muốn lùi hẳn cả lịch sử thì `git revert` rồi `.\tools\deploy.ps1` như bình thường.
 
 ### Thư mục trên NAS cần gì
 

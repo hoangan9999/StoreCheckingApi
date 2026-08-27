@@ -1,0 +1,67 @@
+# Builds the API image and pushes it to GHCR. The PC no longer needs Docker at all:
+# this is a company laptop, and Docker Desktop needs a paid licence there.
+#
+# The NAS must NEVER build .NET either — a build pins its CPU for 5-15 minutes and drags
+# everything else down, phone uploads included. So GitHub builds, GHCR carries the image,
+# and watchtower on the NAS pulls it and restarts the API by itself.
+name: Build and push API image
+
+on:
+  # Every push to master, with no path filter on purpose. tools/deploy.ps1 waits until
+  # /health reports the exact commit of HEAD, so a commit that produced no image would
+  # leave the script waiting for a version that will never exist.
+  push:
+    branches: [master]
+  # Lets a build be re-run by hand from the Actions tab without an empty commit.
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/storechecking-api
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required to push to GHCR. GITHUB_TOKEN is enough — no personal token here.
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rút gọn mã commit
+        id: vars
+        # Fixed at 7 characters to match `git rev-parse --short=7` in tools/deploy.ps1.
+        # Git's default --short length grows with the repo, which would silently break
+        # the version comparison the deploy script relies on.
+        run: echo "sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build và đẩy ảnh
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # The NAS is x86_64. An ARM image would die there with "exec format error".
+          platforms: linux/amd64
+          push: true
+          build-args: APP_VERSION=${{ steps.vars.outputs.sha }}
+          # `latest` is what watchtower follows; the commit tag is what makes a rollback
+          # possible later.
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.vars.outputs.sha }}
+          # Without a layer cache every build restores NuGet packages from scratch.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Tóm tắt
+        run: |
+          echo "Đã đẩy \`${{ env.IMAGE }}:${{ steps.vars.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Watchtower trên NAS sẽ kéo về trong khoảng 60 giây." >> "$GITHUB_STEP_SUMMARY"
