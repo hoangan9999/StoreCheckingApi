@@ -144,8 +144,18 @@ nó không đụng database, và `GEMINI_API_KEY` đang ở đó rồi. Không c
 
 ## Deploy — GitHub build, NAS tự cập nhật
 
-✅ **Chạy thật từ 2026-08-27.** NAS đã bỏ ảnh tự build, nay chạy ảnh kéo từ GHCR:
-`/health` trả `{"ok":true,"db":true,"version":"e27039f"}`.
+✅ **Chạy thật từ 2026-08-27.** NAS đã bỏ ảnh tự build, nay chạy ảnh kéo từ GHCR. Đã đi
+trọn một vòng không đụng tay vào NAS: commit `ced840e` → Actions build → watchtower kéo →
+`XONG. NAS đang chạy bản ced840e, database nối được: True`.
+
+Trong vòng đó script báo "máy chủ chưa trả lời" 16 lần liền. **API không hề chết** — đo
+lại mới ra: `curl` mở kết nối mới mỗi lần dò, và **bắt tay TLS qua Funnel mất 0,9 đến hơn
+20 giây**, vượt ngưỡng chờ 20 giây cũ. Tách theo giai đoạn: DNS 8ms, TCP 0,11s, **TLS
+0,9-8,1s**, bản thân API chỉ 0,3-0,4s. Đã nâng ngưỡng trong `deploy.ps1` lên 45 giây.
+
+**App Angular không dính chuyện này**: trình duyệt giữ kết nối, chỉ lời gọi đầu tiên trả
+giá bắt tay, các lời gọi sau ~0,3s. Đo bằng cách tái dùng kết nối: 1,44s cho lần đầu rồi
+0,30 / 0,36 / 0,30 / 0,39s.
 
 **Không máy nào ở nhà build .NET nữa.**
 
@@ -162,6 +172,10 @@ Deploy = một lệnh trên PC:
 ```
 .\tools\deploy.ps1
 ```
+
+Phải chạy trong **PowerShell**. Gõ dòng đó ở Command Prompt thì cmd không chạy `.ps1`,
+nó đưa cho chương trình liên kết với đuôi file rồi trả lại dấu nhắc — **không báo lỗi
+gì cả**, trông y như đã chạy xong. Lỡ đang ở cmd thì: `powershell -File .\tools\deploy.ps1`.
 
 Script đẩy commit lên GitHub (đó là thứ khởi động build), rồi **chờ tới khi `/health`
 trên NAS báo đúng mã commit vừa đẩy** mới báo xong. "Đã deploy" là thứ đo được chứ không

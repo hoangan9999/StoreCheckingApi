@@ -88,11 +88,16 @@ try {
         Start-Sleep -Seconds 15
         $running = $null
         try {
-            $running = Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 20
+            # 45s, not 20: every poll opens a fresh connection, and the TLS handshake
+            # through the Tailscale Funnel has been measured anywhere from 0.9s to over
+            # 20s. Measured on 2026-08-27: connect 0.11s, handshake 0.9-8.1s, the API
+            # itself 0.3-0.4s. A short timeout here reports the API as down when it is
+            # merely slow to shake hands.
+            $running = Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 45
         } catch {
-            # The API is restarting, or the house connection dropped. Both resolve on
-            # their own, so keep waiting instead of failing the deploy.
-            Write-Host "    máy chủ chưa trả lời (bình thường lúc đang khởi động lại)"
+            # A slow handshake, the API restarting, or the house connection dropping. All
+            # resolve on their own, so keep waiting instead of failing the deploy.
+            Write-Host "    chưa trả lời kịp (bắt tay TLS chậm, hoặc API đang khởi động lại)"
             continue
         }
 
