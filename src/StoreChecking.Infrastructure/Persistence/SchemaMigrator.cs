@@ -31,6 +31,16 @@ public sealed class SchemaMigrator(string connectionString, ILogger<SchemaMigrat
     /// </summary>
     private const long AdvisoryLockKey = 8140_2026;
 
+    /// <summary>
+    /// How long to keep trying for that lock before giving up.
+    /// <para>Bounded on purpose. This runs before Kestrel starts listening, so a wait that
+    /// never ends leaves a container that reports itself as Up while nothing answers on
+    /// its port — no log line, no error, no clue. Timing out throws instead, which stops
+    /// the container and makes the problem visible where problems are supposed to appear.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan LockWait = TimeSpan.FromSeconds(60);
+
     public async Task ApplyAsync(CancellationToken ct = default)
     {
         var scripts = LoadScripts();
@@ -40,12 +50,14 @@ public sealed class SchemaMigrator(string connectionString, ILogger<SchemaMigrat
             return;
         }
 
+        log.LogInformation("Kiểm tra schema ({Count} file)…", scripts.Count);
+
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync(ct);
 
         // Held for the whole run and released when the connection closes. Without it two
         // containers starting together could both try to create the same table.
-        await Exec(conn, $"select pg_advisory_lock({AdvisoryLockKey})", ct);
+        await TakeLock(conn, ct);
 
         await Exec(conn, $"""
             create table if not exists public.{HistoryTable} (
@@ -154,5 +166,40 @@ public sealed class SchemaMigrator(string connectionString, ILogger<SchemaMigrat
     {
         await using var cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Waits for the migration lock, but only for <see cref="LockWait"/>.
+    /// <para>pg_advisory_lock() would be one line, and it waits forever. A connection left
+    /// behind by an instance that died — after an unclean shutdown, say — still holds the
+    /// lock until PostgreSQL reaps it, and the next container to start would then hang here
+    /// silently instead of starting or failing.</para>
+    /// </summary>
+    private async Task TakeLock(NpgsqlConnection conn, CancellationToken ct)
+    {
+        var waited = TimeSpan.Zero;
+        var step = TimeSpan.FromSeconds(2);
+
+        while (true)
+        {
+            await using (var cmd = new NpgsqlCommand($"select pg_try_advisory_lock({AdvisoryLockKey})", conn))
+            {
+                if (await cmd.ExecuteScalarAsync(ct) is true) return;
+            }
+
+            if (waited >= LockWait)
+            {
+                throw new InvalidOperationException(
+                    $"Chờ {LockWait.TotalSeconds:0} giây mà không lấy được khoá nạp schema " +
+                    $"({AdvisoryLockKey}). Có phiên khác đang giữ. Xem ai giữ bằng: " +
+                    "select * from pg_locks where locktype = 'advisory';");
+            }
+
+            log.LogWarning("Có phiên khác đang nạp schema, chờ thêm… ({Waited:0}s/{Limit:0}s)",
+                waited.TotalSeconds, LockWait.TotalSeconds);
+
+            await Task.Delay(step, ct);
+            waited += step;
+        }
     }
 }

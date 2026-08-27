@@ -66,6 +66,11 @@ services:
       # Origins allowed to call this API, comma separated.
       Cors__Origins: ${CORS_ORIGINS}
       ASPNETCORE_ENVIRONMENT: Production
+      # The API applies db/*.sql itself at startup. Set SCHEMA_AUTOMIGRATE=false in .env
+      # to switch that off — the escape hatch for getting the API up while the schema is
+      # being sorted out by hand. Declared here because .env only substitutes into this
+      # file; it does not reach the container on its own.
+      Schema__AutoMigrate: ${SCHEMA_AUTOMIGRATE:-true}
     ports:
       # Published for LAN access and debugging. Traffic from outside the house comes in
       # through the tailscale service below instead.

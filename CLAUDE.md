@@ -20,7 +20,89 @@ Nền tảng đã xong, sẵn sàng rót module vào.
 | Cổng chặn: test đỏ thì không deploy | ✅ `build` job `needs: test` |
 | Clean Architecture 4 project | ✅ commit `a83ee20` |
 | Query filter tự động theo `IOwnedByUser` | ✅ + 2 test canh gác |
+| Schema toàn bộ 22 bảng/view | ✅ `db/001`–`007`, API tự nạp lúc khởi động |
 | **Module Ghi chú** | 🔄 backend xong, chờ Angular trỏ sang + chuyển dữ liệu |
+
+### 🔴 ĐANG DỪNG Ở ĐÂY — 2026-08-27, làm tiếp khi về nhà
+
+**Việc dở:** chép dữ liệu từ Supabase sang NAS, một lần cho cả 17 bảng.
+Schema đã xong hết (`db/001`–`007`, API tự nạp). Chỉ còn đúng bước chép dữ liệu.
+
+Quyết định: **chép một lần cho cả 17 bảng**, không chia theo module. Lý do chủ repo đưa
+ra: sản phẩm chỉ một người dùng và sẽ không nhập dữ liệu mới trong lúc migrate, nên không
+có chuyện hai bên lệch nhau — thứ vốn là lý lẽ duy nhất chống lại việc chép gộp.
+
+**Chép ở đâu:** trong container `storechecking-db` (ảnh `postgres:16-alpine` nên có sẵn
+`psql` và `pg_dump`, không cần Docker). Script: `tools/migrate-all-inside-db.sh`.
+
+**Vướng cái gì:**
+
+1. Terminal của Container Manager quá dở: nút Create là "chạy chương trình gì" chứ không
+   phải nơi gõ lệnh, mỗi lần Create lại là một tiến trình mới nên `export` không giữ được
+   biến, và khung `bash` cuối cùng thì không gõ được. → Nên bật SSH:
+   Control Panel → Terminal & SNMP → Enable SSH service, rồi
+   `ssh <user>@192.168.1.76` và `sudo docker exec -it storechecking-db bash`.
+2. Không nối được Supabase bằng direct connection (IPv6-only). Phải dùng **Session
+   pooler** — xem mục Quy ước.
+
+**Thông tin đã xác định, khỏi tìm lại:**
+
+- Vùng AWS của project Supabase: **ap-southeast-2** (suy từ IPv6 `2406:da1c:16f1:f600::`
+  nằm trong `2406:da1c::/35` theo `ip-ranges.amazonaws.com`).
+- Cả `aws-0-ap-southeast-2` lẫn `aws-1-ap-southeast-2` đều có IPv4; chưa biết project nằm
+  ở cái nào, lệnh trong script thử lần lượt cả hai.
+- Mật khẩu database bắt đầu bằng `@`, trong URL phải viết `%40`.
+- `english_words` (17 dòng) và `speaking_saved` (1 dòng) **đã chép từ trước** — script tự
+  bỏ qua bảng nào đã có dữ liệu nên không sợ nhân đôi.
+
+### 🔴 Sự cố kèm theo: API không phản hồi (đang gỡ)
+
+NAS tự tắt rồi được khởi động lại. Diễn biến đã đo được, theo thứ tự thời gian:
+
+1. Ban đầu `curl` lỗi 35, `failed to receive handshake`, `time_appconnect=0` — TLS hỏng
+   hẳn. DNS vẫn ra IP công khai `103.84.155.153`, tức Funnel còn đăng ký. Thủ phạm là
+   `storechecking-ts`: Container Manager báo *"stopped unexpectedly"* ba lần, up time 2
+   phút trong khi các container khác 33-35 phút → nó đang chết rồi tự dựng lại liên tục.
+2. Sau vài lần restart, `storechecking-ts` ổn định (`Up for 7 mins`) và endpoint chuyển
+   sang **502 Bad Gateway kèm chứng chỉ hợp lệ**. Tailscale đã tốt; giờ là `api:8080`
+   không trả lời.
+3. `storechecking-api` báo `Up for 33 mins` — tiến trình còn sống nhưng Kestrel không
+   nghe cổng.
+
+**Cách phân biệt hai tầng, ghi lại vì rất hữu dụng:** TLS hỏng hẳn = Tailscale;
+502 kèm chứng chỉ hợp lệ = Tailscale tốt, backend không trả lời.
+
+**Đã tìm ra một lỗi thiết kế thật và đã sửa:** `SchemaMigrator` gọi `pg_advisory_lock`,
+hàm này **chờ vô hạn**. Một kết nối sót lại từ instance chết — chuyện rất dễ xảy ra sau
+khi NAS tắt đột ngột — vẫn giữ khoá cho tới khi Postgres thu hồi, và container kế tiếp sẽ
+treo im lặng ở đó: container báo "Up" mà không cổng nào mở, không log, không lỗi. Nay đổi
+sang `pg_try_advisory_lock` chờ tối đa 60 giây rồi ném lỗi, kèm log mỗi 2 giây. Thà chết
+to tiếng hơn treo im lặng. Đây là giả thuyết hàng đầu cho triệu chứng ở mục 3.
+
+**Việc cần làm, theo thứ tự:**
+
+1. **Đọc log `storechecking-api`** (Container Manager → chọn container → Details → Log).
+   Đây là bằng chứng quyết định:
+   - dừng ở `Kiểm tra schema…` hoặc `Đang nạp schema X` rồi không có gì nữa → đúng là treo
+     ở khoá, bản sửa ở trên giải quyết
+   - có dòng `Now listening on http://[::]:8080` → API khoẻ, vấn đề nằm ở mạng docker giữa
+     `ts` và `api`; chữa bằng Project → Stop → Build để compose dựng lại mạng cho nhất quán
+   - Log tab đôi khi báo "No logs available" (đã gặp với `ts`) — lúc đó dùng SSH:
+     `sudo docker logs --tail 100 storechecking-api`
+2. Deploy bản có `pg_try_advisory_lock`, rồi xem 502 có hết không.
+3. Nếu cần API lên gấp: đặt `SCHEMA_AUTOMIGRATE=false` trong `.env` rồi Project → Build.
+   Biến này khai báo trong `docker-compose.yml`; đặt `Schema__AutoMigrate` trực tiếp vào
+   `.env` KHÔNG có tác dụng vì `.env` của compose chỉ thay biến trong file compose.
+4. Kiểm `schema_history` có đủ 7 dòng chưa.
+
+**Đừng lặp lại hai việc vô ích này:**
+
+- `http://192.168.1.76:8140/health` chỉ có nghĩa khi máy **ở cùng mạng nhà**. Vào DSM qua
+  QuickConnect thì vẫn là ở ngoài mạng, gọi IP nội bộ sẽ `ERR_CONNECTION_TIMED_OUT` và
+  không nói được gì về API.
+- `SchemaMigrator` không sai ở phần nạp SQL: log CI của commit `1909a50` cho thấy nó nạp
+  trót lọt cả 7 file, kể cả `007-inventory.sql` với hàm plpgsql dấu `$$`, rồi 44 test xanh.
+  Vấn đề là ở chỗ chờ khoá, không phải ở chỗ chạy SQL.
 
 ### Việc tiếp theo — chuyển module
 
@@ -102,6 +184,12 @@ Mỗi module đi đúng vòng này, hết vòng mới sang module sau:
   NAS **tự build** — build tại chỗ thì luôn ra đúng kiến trúc của chính nó. Bỏ build trên
   NAS là mất tấm lưới đó, nên `Dockerfile` phải biên dịch chéo và workflow phải build cả
   `linux/amd64,linux/arm64`.
+- **Nối tới Supabase phải qua Session pooler, không phải direct connection.**
+  `db.<ref>.supabase.co` nay chỉ phân giải ra IPv6, mà container trên NAS không có IPv6 —
+  `psql` báo `Address not available`, nghe như server chết chứ không như lỗi địa chỉ. Lấy
+  chuỗi ở khối **Session pooler** trong hộp Connect: host `aws-0-<vùng>.pooler.supabase.com`
+  cổng 5432, và user mang theo mã project (`postgres.<ref>`, không phải `postgres` trơn).
+  Transaction pooler ở cổng 6543 thì không phục vụ được `pg_dump`.
 - **Ô Search của Container Manager không tìm được ảnh trên GHCR** — nó báo *"Unable to
   connect to the registry"*, nghe như lỗi mạng nhưng không phải: GHCR không mở API tìm
   kiếm. Không cần Search, vì tên ảnh đã ghi đủ trong `docker-compose.yml`; cứ Build là
