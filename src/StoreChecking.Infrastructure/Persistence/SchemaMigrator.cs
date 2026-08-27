@@ -41,6 +41,15 @@ public sealed class SchemaMigrator(string connectionString, ILogger<SchemaMigrat
     /// </summary>
     private static readonly TimeSpan LockWait = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// How long to keep retrying the very first connection before giving up.
+    /// <para>Two minutes because that is roughly how long PostgreSQL can need after the NAS
+    /// loses power: the container reports itself healthy well before it is answering
+    /// queries comfortably. Long enough to ride out a recovery, short enough that a genuine
+    /// misconfiguration still fails the same day.</para>
+    /// </summary>
+    private static readonly TimeSpan DatabaseWait = TimeSpan.FromSeconds(120);
+
     public async Task ApplyAsync(CancellationToken ct = default)
     {
         var scripts = LoadScripts();
@@ -53,7 +62,7 @@ public sealed class SchemaMigrator(string connectionString, ILogger<SchemaMigrat
         log.LogInformation("Kiểm tra schema ({Count} file)…", scripts.Count);
 
         await using var conn = new NpgsqlConnection(connectionString);
-        await conn.OpenAsync(ct);
+        await OpenWithRetry(conn, ct);
 
         // Held for the whole run and released when the connection closes. Without it two
         // containers starting together could both try to create the same table.
@@ -166,6 +175,42 @@ public sealed class SchemaMigrator(string connectionString, ILogger<SchemaMigrat
     {
         await using var cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Opens the connection, retrying while the database is not answering yet.
+    /// <para>Learned the hard way on 2026-08-27: the NAS lost power, PostgreSQL came back
+    /// needing a moment to recover, and the API happened to boot in that window. The
+    /// connection threw, this ran before Kestrel started listening, so the process died —
+    /// and the endpoint served 502 for hours while everything looked "Up" in Container
+    /// Manager. A home NAS loses power again sooner or later.</para>
+    /// <para>compose's <c>depends_on: service_healthy</c> is not enough on its own: it only
+    /// applies when compose starts the stack, and pg_isready can pass while the server is
+    /// still too busy to answer the type queries Npgsql runs on its first connection.</para>
+    /// </summary>
+    private async Task OpenWithRetry(NpgsqlConnection conn, CancellationToken ct)
+    {
+        var waited = TimeSpan.Zero;
+        var step = TimeSpan.FromSeconds(3);
+
+        while (true)
+        {
+            try
+            {
+                await conn.OpenAsync(ct);
+                if (waited > TimeSpan.Zero)
+                    log.LogInformation("Đã nối được database sau {Waited:0} giây chờ.", waited.TotalSeconds);
+                return;
+            }
+            catch (Exception ex) when (waited < DatabaseWait && !ct.IsCancellationRequested)
+            {
+                log.LogWarning("Chưa nối được database ({Error}), thử lại… ({Waited:0}s/{Limit:0}s)",
+                    ex.Message, waited.TotalSeconds, DatabaseWait.TotalSeconds);
+
+                await Task.Delay(step, ct);
+                waited += step;
+            }
+        }
     }
 
     /// <summary>

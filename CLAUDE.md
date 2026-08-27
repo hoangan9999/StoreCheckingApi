@@ -55,54 +55,52 @@ có chuyện hai bên lệch nhau — thứ vốn là lý lẽ duy nhất chốn
 - `english_words` (17 dòng) và `speaking_saved` (1 dòng) **đã chép từ trước** — script tự
   bỏ qua bảng nào đã có dữ liệu nên không sợ nhân đôi.
 
-### 🔴 Sự cố kèm theo: API không phản hồi (đang gỡ)
+### ✅ Sự cố API 502 — đã tìm ra nguyên nhân, 2026-08-27
 
-NAS tự tắt rồi được khởi động lại. Diễn biến đã đo được, theo thứ tự thời gian:
+NAS mất điện đột ngột. Sau đó API trả 502 suốt nhiều giờ trong khi Container Manager báo
+mọi container đều "Up".
 
-1. Ban đầu `curl` lỗi 35, `failed to receive handshake`, `time_appconnect=0` — TLS hỏng
-   hẳn. DNS vẫn ra IP công khai `103.84.155.153`, tức Funnel còn đăng ký. Thủ phạm là
-   `storechecking-ts`: Container Manager báo *"stopped unexpectedly"* ba lần, up time 2
-   phút trong khi các container khác 33-35 phút → nó đang chết rồi tự dựng lại liên tục.
-2. Sau vài lần restart, `storechecking-ts` ổn định (`Up for 7 mins`) và endpoint chuyển
-   sang **502 Bad Gateway kèm chứng chỉ hợp lệ**. Tailscale đã tốt; giờ là `api:8080`
-   không trả lời.
-3. `storechecking-api` báo `Up for 33 mins` — tiến trình còn sống nhưng Kestrel không
-   nghe cổng.
+**Nguyên nhân:** PostgreSQL cần thời gian phục hồi sau lần tắt không sạch, và API khởi
+động đúng vào cửa sổ đó. `SchemaMigrator` mở kết nối, thất bại, **ném lỗi** — mà nó chạy
+*trước* `app.Run()`, nên Kestrel không bao giờ nghe cổng. Tiến trình chết, container chết,
+Docker restart lại rơi vào đúng tình huống cũ.
 
-**Cách phân biệt hai tầng, ghi lại vì rất hữu dụng:** TLS hỏng hẳn = Tailscale;
-502 kèm chứng chỉ hợp lệ = Tailscale tốt, backend không trả lời.
+**Cách gỡ đã dùng, ghi lại vì rất hiệu quả:**
 
-**Đã tìm ra một lỗi thiết kế thật và đã sửa:** `SchemaMigrator` gọi `pg_advisory_lock`,
-hàm này **chờ vô hạn**. Một kết nối sót lại từ instance chết — chuyện rất dễ xảy ra sau
-khi NAS tắt đột ngột — vẫn giữ khoá cho tới khi Postgres thu hồi, và container kế tiếp sẽ
-treo im lặng ở đó: container báo "Up" mà không cổng nào mở, không log, không lỗi. Nay đổi
-sang `pg_try_advisory_lock` chờ tối đa 60 giây rồi ném lỗi, kèm log mỗi 2 giây. Thà chết
-to tiếng hơn treo im lặng. Đây là giả thuyết hàng đầu cho triệu chứng ở mục 3.
+1. Phân biệt tầng hỏng bằng dạng lỗi HTTPS:
+   - TLS hỏng hẳn (`curl` lỗi 35, `time_appconnect=0`) → Tailscale
+   - **502 kèm chứng chỉ hợp lệ** → Tailscale tốt, backend không trả lời
+2. Gọi API từ container khác trên cùng mạng compose, để loại trừ chuyện mạng docker.
+   Trong `storechecking-db` (alpine có busybox wget, chú ý `-T` chứ không phải `--timeout`):
+   `wget -O- -T 10 http://api:8080/health`
+   → `Connecting to api:8080 (172.20.0.4:8080)` rồi `Connection refused` = DNS và mạng đều
+   tốt, chỉ là **không có gì nghe cổng 8080**. Loại hẳn giả thuyết lệch mạng.
+3. Chạy tay một tiến trình thứ hai trong container `storechecking-api` để thấy log khởi
+   động — Container Manager không hiện log, và tab Log hay báo "No logs available":
+   `dotnet StoreChecking.Api.dll`
+   Terminal của Container Manager **không cuộn được**, nên cắt đầu ra:
+   `sh -c "dotnet StoreChecking.Api.dll 2>&1 | head -25"`
+4. Đọc thứ tự hàm trong stack trace để biết lỗi ở đâu. Chết trong
+   `PostgresDatabaseInfo.LoadPostgresInfo` là **sau khi xác thực đã xong** — nên mật khẩu
+   không sai, database mới là thứ chưa phục vụ được.
 
-**Việc cần làm, theo thứ tự:**
+**Đã sửa hai lỗi thật:**
 
-1. **Đọc log `storechecking-api`** (Container Manager → chọn container → Details → Log).
-   Đây là bằng chứng quyết định:
-   - dừng ở `Kiểm tra schema…` hoặc `Đang nạp schema X` rồi không có gì nữa → đúng là treo
-     ở khoá, bản sửa ở trên giải quyết
-   - có dòng `Now listening on http://[::]:8080` → API khoẻ, vấn đề nằm ở mạng docker giữa
-     `ts` và `api`; chữa bằng Project → Stop → Build để compose dựng lại mạng cho nhất quán
-   - Log tab đôi khi báo "No logs available" (đã gặp với `ts`) — lúc đó dùng SSH:
-     `sudo docker logs --tail 100 storechecking-api`
-2. Deploy bản có `pg_try_advisory_lock`, rồi xem 502 có hết không.
-3. Nếu cần API lên gấp: đặt `SCHEMA_AUTOMIGRATE=false` trong `.env` rồi Project → Build.
-   Biến này khai báo trong `docker-compose.yml`; đặt `Schema__AutoMigrate` trực tiếp vào
-   `.env` KHÔNG có tác dụng vì `.env` của compose chỉ thay biến trong file compose.
-4. Kiểm `schema_history` có đủ 7 dòng chưa.
+- `pg_advisory_lock` chờ vô hạn → đổi sang `pg_try_advisory_lock`, chờ tối đa 60 giây.
+- Không thử lại khi database chưa sẵn sàng → nay thử lại tối đa 120 giây, có log mỗi lần.
+  `depends_on: service_healthy` của compose không đủ: nó chỉ có tác dụng khi compose dựng
+  cả stack, và `pg_isready` xanh trước khi Postgres đủ khoẻ để trả lời truy vấn kiểu dữ
+  liệu mà Npgsql chạy ở kết nối đầu tiên.
 
-**Đừng lặp lại hai việc vô ích này:**
+**Kết quả đo được:** `{"ok":true,"db":true,"version":"2f53f8e"}`, và
+`Schema: 0 file mới nạp, 7 file tổng cộng` — **toàn bộ 22 bảng/view đã có trên NAS.**
 
-- `http://192.168.1.76:8140/health` chỉ có nghĩa khi máy **ở cùng mạng nhà**. Vào DSM qua
-  QuickConnect thì vẫn là ở ngoài mạng, gọi IP nội bộ sẽ `ERR_CONNECTION_TIMED_OUT` và
-  không nói được gì về API.
-- `SchemaMigrator` không sai ở phần nạp SQL: log CI của commit `1909a50` cho thấy nó nạp
-  trót lọt cả 7 file, kể cả `007-inventory.sql` với hàm plpgsql dấu `$$`, rồi 44 test xanh.
-  Vấn đề là ở chỗ chờ khoá, không phải ở chỗ chạy SQL.
+**Hai việc vô ích, đừng lặp lại:**
+
+- `http://192.168.1.76:8140/health` chỉ có nghĩa khi máy ở **cùng mạng nhà**. Vào DSM qua
+  QuickConnect vẫn là ở ngoài mạng.
+- `SchemaMigrator` không sai ở phần chạy SQL: log CI của `1909a50` cho thấy nó nạp trót
+  lọt cả 7 file, kể cả `007-inventory.sql` với hàm plpgsql dấu `$$`, rồi 44 test xanh.
 
 ### Việc tiếp theo — chuyển module
 
