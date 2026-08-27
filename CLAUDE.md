@@ -3,8 +3,60 @@
 File này ghi lại tiến độ chuyển backend từ **Supabase** sang **.NET 9 + PostgreSQL tự dựng
 trên NAS**. Xong giai đoạn nào thì tick giai đoạn đó.
 
-Repo Angular: `C:\Packing\InventoryAndTrackingProfit` (vẫn đang chạy Supabase).
-Repo này: backend mới, deploy riêng, **không đụng gì vào app đang chạy**.
+Repo Angular: `D:\Dev\StoreChecking` (remote `hoangan9999/InventoryAndTrackingProfit`).
+Phần Tiếng Anh đã trỏ sang API này; phần còn lại vẫn gọi Supabase.
+Repo này: backend mới, deploy riêng.
+
+---
+
+## 📌 ĐANG Ở ĐÂU — cập nhật 2026-08-27
+
+Nền tảng đã xong, sẵn sàng rót module vào.
+
+| Việc | Trạng thái |
+|---|---|
+| Deploy tự động (Actions → GHCR → watchtower) | ✅ chạy thật, một lệnh `.\tools\deploy.ps1` |
+| Test hợp đồng khoá 12 endpoint | ✅ 33 test, chạy trên CI với Postgres thật |
+| Cổng chặn: test đỏ thì không deploy | ✅ `build` job `needs: test` |
+| Clean Architecture 4 project | ✅ commit `a83ee20` |
+| Query filter tự động theo `IOwnedByUser` | ✅ + 2 test canh gác |
+
+### Việc tiếp theo — chuyển module
+
+Thứ tự: **Ghi chú → Đóng gói → Chi tiêu → Marketing → Kho hàng.**
+
+Mỗi module đi đúng vòng này, hết vòng mới sang module sau:
+
+1. `db/00N-<module>.sql` — bê schema từ `supabase/*.sql`, **bỏ** `default auth.uid()`,
+   **bỏ** khoá ngoại tới `auth.users`, **bỏ** mọi câu RLS, **bỏ** `security_invoker` ở view.
+2. Domain → Application → Infrastructure → Api, theo bảng phân tầng ở trên.
+3. Test hợp đồng cho từng endpoint + test cách ly hai user cho từng bảng.
+4. Deploy, nạp SQL vào Postgres trên NAS.
+5. Chuyển dữ liệu bằng `pg_dump --data-only` **đúng lúc cắt sang**, không chuyển trước.
+6. Angular trỏ sang API mới, rồi mới xoá hàm Supabase tương ứng.
+
+### Hai thứ phải giải TRƯỚC khi tới Marketing
+
+- **Xác thực máy-gọi-máy.** `api/cron-post.js` trên Vercel đọc/ghi `post_queue` bằng
+  `SUPABASE_SERVICE_ROLE_KEY`. API .NET hiện chỉ nhận JWT người dùng. Cần thêm một đường
+  cho máy (API key hoặc token dịch vụ) trước khi `post_queue` rời Supabase.
+- **`post_queue.image_url`** đang trỏ tới Supabase Storage. Chủ repo sẽ **tự upload lại
+  ảnh** lên NAS, nhưng URL trong bảng vẫn phải viết lại khi chuyển.
+
+### Một thứ phải giải TRƯỚC khi tới Kho hàng
+
+- **Trigger `check_stock()`** — nghiệp vụ chặn bán vượt tồn đang nằm trong database.
+  plpgsql thuần, không đụng `auth.uid()`, bê nguyên sang được. Làm cả hai lớp: giữ trigger
+  làm chốt cuối, thêm kiểm ở Application để báo lỗi tử tế.
+
+### Việc lặt vặt còn nợ
+
+- [ ] **Thu hồi token GHCR.** Token đang dùng có quyền `repo` (đọc/ghi mọi repo riêng tư)
+      trong khi chỉ cần `read:packages`, và nó nằm dạng chữ thường ở hai chỗ trên NAS:
+      `watchtower/config.json` và `/root/.docker/config.json`.
+- [ ] Bỏ `listEnglishWords` / `addEnglishWord` / `*SavedSentence*` khỏi `supabase.service.ts`
+      bên repo Angular — code chết, không còn chỗ nào gọi.
+- [ ] Angular còn 3 migration Supabase chưa chạy (xem mục cuối file).
 
 ---
 
@@ -59,6 +111,10 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
 ---
 
 ## Kiến trúc — Clean Architecture, 4 project
+
+✅ **Xong 2026-08-27, commit `a83ee20`.** 33/33 test hợp đồng xanh mà **không sửa một dòng
+test nào** — hợp đồng HTTP với app Angular còn nguyên vẹn qua cả cuộc viết lại. Đã deploy,
+NAS đang chạy bản này.
 
 Tái cấu trúc ngày 2026-08-27, **trước** khi chuyển 17 bảng còn lại. Lý do làm bây giờ:
 rót 79 hàm vào một project phẳng rồi mới tách thì đắt gấp nhiều lần.
