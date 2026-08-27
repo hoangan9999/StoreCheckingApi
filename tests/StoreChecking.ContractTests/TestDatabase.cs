@@ -21,6 +21,10 @@ public static class TestDatabase
         Environment.GetEnvironmentVariable("TEST_POSTGRES")
         ?? "Host=localhost;Port=5432;Database=storechecking_test;Username=postgres;Password=postgres";
 
+    // Only checks that a server answers. Creating the tables is NOT done here: the
+    // application does it itself on startup (SchemaMigrator), and letting the tests run
+    // that same code is the point — a separate copy of the schema-loading logic would
+    // stop reflecting what production actually does.
     private static readonly Lazy<string?> Probe = new(() =>
     {
         try
@@ -28,7 +32,6 @@ public static class TestDatabase
             var b = new NpgsqlConnectionStringBuilder(ConnectionString) { Timeout = 3 };
             using var c = new NpgsqlConnection(b.ConnectionString);
             c.Open();
-            ApplySchema(c);
             return null;
         }
         catch (Exception ex)
@@ -40,31 +43,4 @@ public static class TestDatabase
 
     public static bool IsAvailable => Probe.Value is null;
     public static string SkipReason => Probe.Value ?? "";
-
-    /// <summary>
-    /// Runs the same db/*.sql the NAS runs. Those files are written with
-    /// `create table if not exists`, so re-running them on a warm database is a no-op.
-    /// </summary>
-    private static void ApplySchema(NpgsqlConnection open)
-    {
-        foreach (var file in Directory.GetFiles(Path.Combine(RepoRoot(), "db"), "*.sql").OrderBy(f => f))
-        {
-            using var cmd = new NpgsqlCommand(File.ReadAllText(file), open);
-            cmd.ExecuteNonQuery();
-        }
-    }
-
-    /// <summary>
-    /// Walks up from the test binaries until the repository root is found. Hard-coding
-    /// "../../../.." breaks the moment the target framework or configuration changes.
-    /// </summary>
-    public static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "StoreChecking.sln")))
-            dir = dir.Parent;
-
-        return dir?.FullName
-               ?? throw new InvalidOperationException("Không tìm thấy gốc kho (StoreChecking.sln).");
-    }
 }

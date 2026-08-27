@@ -7,7 +7,15 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The schema files travel inside the image so SchemaMigrator can apply them at
+         startup. They stay in db/ at the repo root because docker-compose also mounts that
+         folder into the database container, where Postgres runs them on a first-ever boot. -->
+    <EmbeddedResource Include="..\..\db\*.sql" LinkBase="Schema" />
   </ItemGroup>
 
   <PropertyGroup>

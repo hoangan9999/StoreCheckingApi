@@ -5,6 +5,7 @@ using StoreChecking.Api.Auth;
 using StoreChecking.Application.Abstractions;
 using StoreChecking.Application.Common;
 using StoreChecking.Infrastructure;
+using StoreChecking.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -135,6 +136,19 @@ if (swaggerEnabled)
 }
 
 var app = builder.Build();
+
+// Bring the database schema up to date before serving anything.
+//
+// The alternative was doing it by hand: upload a .sql file to the NAS through File
+// Station, open a terminal into the database container, run psql — four steps per module,
+// and only possible from home. Now deploying the code deploys the schema.
+//
+// Set Schema__AutoMigrate=false to skip it, for the rare case of wanting the API up while
+// the database is being worked on by hand.
+if (builder.Configuration.GetValue("Schema:AutoMigrate", true))
+{
+    await app.Services.GetRequiredService<SchemaMigrator>().ApplyAsync();
+}
 
 if (swaggerEnabled)
 {

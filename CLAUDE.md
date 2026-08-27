@@ -28,13 +28,14 @@ Thứ tự: **Ghi chú → Đóng gói → Chi tiêu → Marketing → Kho hàng
 
 Mỗi module đi đúng vòng này, hết vòng mới sang module sau:
 
-1. `db/00N-<module>.sql` — bê schema từ `supabase/*.sql`, **bỏ** `default auth.uid()`,
-   **bỏ** khoá ngoại tới `auth.users`, **bỏ** mọi câu RLS, **bỏ** `security_invoker` ở view.
+1. ~~Schema~~ — XONG HẾT. `db/001`..`db/007` đã có đủ 22 bảng/view; API tự nạp lúc khởi
+   động (`SchemaMigrator`), không phải làm tay trên NAS nữa.
 2. Domain → Application → Infrastructure → Api, theo bảng phân tầng ở trên.
 3. Test hợp đồng cho từng endpoint + test cách ly hai user cho từng bảng.
-4. Deploy, nạp SQL vào Postgres trên NAS.
+4. Deploy — `.\tools\deploy.ps1`. Schema đi theo code, tự nạp.
 5. Chuyển dữ liệu **đúng lúc cắt sang**, không chuyển trước:
-   `./tools/migrate-from-supabase.sh <tên bảng>...` (chạy trên NAS, cần `SUPABASE_DB_URL`).
+   `./tools/migrate-from-supabase.sh <bảng cha trước, bảng con sau>` — chạy trên NAS,
+   cần `SUPABASE_DB_URL`. Chép theo đúng thứ tự truyền vào vì có khoá ngoại.
 6. Angular trỏ sang API mới, rồi mới xoá hàm Supabase tương ứng.
 
 ### Hai thứ phải giải TRƯỚC khi tới Marketing

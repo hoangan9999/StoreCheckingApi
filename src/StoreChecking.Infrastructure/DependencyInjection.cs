@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using StoreChecking.Application.Abstractions;
 using StoreChecking.Application.English;
@@ -20,6 +21,10 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString)
     {
         services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connectionString));
+
+        // Applies db/*.sql at startup. Registered here so Program.cs only has to ask for it.
+        services.AddSingleton(sp => new SchemaMigrator(
+            connectionString, sp.GetRequiredService<ILogger<SchemaMigrator>>()));
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IDatabaseHealth, DatabaseHealth>();
 

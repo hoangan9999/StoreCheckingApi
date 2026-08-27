@@ -20,7 +20,10 @@
 #  Usage (from /volume1/docker/storechecking):
 #    export SUPABASE_DB_URL='postgresql://postgres:PASSWORD@db.xxxx.supabase.co:5432/postgres'
 #    DOCKER="sudo docker" ./tools/migrate-from-supabase.sh notes
-#    DOCKER="sudo docker" ./tools/migrate-from-supabase.sh english_words speaking_saved
+#    DOCKER="sudo docker" ./tools/migrate-from-supabase.sh expense_categories expenses
+#
+#  Name parent tables BEFORE their children: they are copied in the order given, and a
+#  child restored first fails its foreign key.
 #
 #  The password is Supabase -> Project Settings -> Database (NOT the anon/publishable key),
 #  and the DIRECT connection on port 5432 — the pooler on 6543 cannot serve pg_dump.
@@ -73,8 +76,11 @@ for t in "${TABLES[@]}"; do
   printf "  %-16s %s\n" "$t" "$n"
   if [[ "$n" == "TABLE MISSING" ]]; then
     echo >&2
-    echo "ERROR: table $t does not exist on the NAS yet. Apply the schema first:" >&2
-    echo "  $DOCKER exec -i $NAS_CONTAINER psql -U $NAS_USER -d $NAS_DB < db/00N-<module>.sql" >&2
+    echo "ERROR: table $t does not exist on the NAS yet." >&2
+    echo "The API applies db/*.sql itself when it starts, so this means either the table" >&2
+    echo "has no schema file yet, or the running image predates the one that adds it." >&2
+    echo "Check what has been applied:" >&2
+    echo "  $DOCKER exec $NAS_CONTAINER psql -U $NAS_USER -d $NAS_DB -c 'table schema_history'" >&2
     exit 1
   fi
   if [[ "$n" != "0" ]]; then
@@ -86,23 +92,31 @@ for t in "${TABLES[@]}"; do
   fi
 done
 
-# --- Dump ------------------------------------------------------------------------------
+# --- Dump and restore, ONE TABLE AT A TIME, in the order given ------------------------
+# One pg_dump with several --table arguments would be shorter, and wrong: it emits the
+# tables in its own order, with no regard for foreign keys. expenses references
+# expense_categories, and sales references products — restoring a child before its parent
+# fails the constraint. Naming tables parent-first and copying them one by one is what
+# makes the order guaranteed rather than lucky.
+#
+# The NAS database container publishes no port on purpose, so psql is fed from inside it.
 echo
-echo "=== Dumping (data only) ==="
-ARGS=()
-for t in "${TABLES[@]}"; do ARGS+=(--table="public.$t"); done
-$DOCKER run --rm "$PG_IMAGE" \
-  pg_dump "$SUPABASE_DB_URL" --data-only --no-owner --no-privileges "${ARGS[@]}" \
-  > "$DUMP_FILE"
-echo "  wrote $DUMP_FILE ($(wc -c < "$DUMP_FILE") bytes)"
+echo "=== Copying (data only), in the order given ==="
+: > "$DUMP_FILE"
+for t in "${TABLES[@]}"; do
+  one="$DUMP_DIR/$t-data.sql"
+  $DOCKER run --rm "$PG_IMAGE" \
+    pg_dump "$SUPABASE_DB_URL" --data-only --no-owner --no-privileges --table="public.$t" \
+    > "$one"
+  printf "  %-24s dumped %s bytes" "$t" "$(wc -c < "$one")"
 
-# --- Restore ---------------------------------------------------------------------------
-# The NAS database container publishes no port on purpose, so feed psql from inside it.
-echo
-echo "=== Restoring into the NAS ==="
-$DOCKER exec -i "$NAS_CONTAINER" psql -U "$NAS_USER" -d "$NAS_DB" -v ON_ERROR_STOP=1 \
-  < "$DUMP_FILE" > /dev/null
-echo "  done"
+  $DOCKER exec -i "$NAS_CONTAINER" psql -U "$NAS_USER" -d "$NAS_DB" -v ON_ERROR_STOP=1 \
+    < "$one" > /dev/null
+  echo " -> restored"
+
+  # Keep a combined copy too, so one run leaves one artefact to look at afterwards.
+  cat "$one" >> "$DUMP_FILE"
+done
 
 # --- Verify ----------------------------------------------------------------------------
 echo
