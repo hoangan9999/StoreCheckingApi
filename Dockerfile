@@ -1,11 +1,19 @@
-# Multi-arch build: works on both x86_64 and ARM NAS hardware.
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+# Multi-arch, built by GitHub Actions for both linux/amd64 and linux/arm64.
+#
+# --platform=$BUILDPLATFORM pins the SDK stage to the runner's own architecture and
+# cross-compiles with `-a $TARGETARCH`. Letting the SDK stage run as the target
+# architecture instead would emulate the whole .NET build under QEMU, which turns a
+# one-minute build into tens of minutes.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+ARG TARGETARCH
 WORKDIR /src
 COPY src/StoreChecking.Api/StoreChecking.Api.csproj src/StoreChecking.Api/
-RUN dotnet restore src/StoreChecking.Api/StoreChecking.Api.csproj
+RUN dotnet restore -a $TARGETARCH src/StoreChecking.Api/StoreChecking.Api.csproj
 COPY . .
-RUN dotnet publish src/StoreChecking.Api/StoreChecking.Api.csproj -c Release -o /app
+RUN dotnet publish -a $TARGETARCH --no-restore -c Release -o /app src/StoreChecking.Api/StoreChecking.Api.csproj
 
+# No --platform here on purpose: this stage must BE the target architecture. It only
+# copies files, so nothing foreign is ever executed and no emulation is needed.
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 COPY --from=build /app .

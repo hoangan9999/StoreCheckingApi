@@ -38,6 +38,15 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
   `ERR_BLOCKED_BY_CLIENT`. Đây chính là lý do `nas-uploader` chạy được suốt (nó bật Funnel)
   còn `storechecking` thì không. Cách phân biệt: `dns.google/resolve?name=<host>&type=A`
   có trả IP công khai hay không.
+- **NAS chạy ARM64, không phải x86.** Nó đòi registry đúng `linux/arm64/v8`; ảnh chỉ có
+  amd64 sẽ chết với `no matching manifest for linux/arm64/v8`. Trước đây không lộ ra vì
+  NAS **tự build** — build tại chỗ thì luôn ra đúng kiến trúc của chính nó. Bỏ build trên
+  NAS là mất tấm lưới đó, nên `Dockerfile` phải biên dịch chéo và workflow phải build cả
+  `linux/amd64,linux/arm64`.
+- **Ô Search của Container Manager không tìm được ảnh trên GHCR** — nó báo *"Unable to
+  connect to the registry"*, nghe như lỗi mạng nhưng không phải: GHCR không mở API tìm
+  kiếm. Không cần Search, vì tên ảnh đã ghi đủ trong `docker-compose.yml`; cứ Build là
+  Docker kéo thẳng theo tên.
 - **Đặt tên trên NAS:** mỗi app một thư mục trong `/volume1/docker/` đặt theo tên app
   (`solar`, `nas-uploader`, `storechecking`), và container đặt tiền tố theo tên app
   (`solar-web`, `storechecking-api`). Tên trống trơn kiểu `api` sẽ đụng ngay khi có app
