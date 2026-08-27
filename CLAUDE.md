@@ -14,8 +14,12 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
   `docker-compose.yml`. Chuỗi hiển thị cho người dùng (nhãn Swagger, thông báo lỗi khởi
   động) thì vẫn tiếng Việt.
 - Tài liệu (`README.md`, file này) và commit message: tiếng Việt.
-- **Bảng mới thì phải thêm `HasQueryFilter`** trong `AppDbContext`. Đây là thứ thay cho RLS
-  của Supabase — quên là lộ dữ liệu giữa các user, và không có lưới nào đỡ.
+- **Entity mới thì cho implement `IOwnedByUser`** — thế là đủ. `AppDbContext` duyệt model
+  và tự gắn `e => e.UserId == CurrentUserId` cho mọi entity mang interface đó. Đây là thứ
+  thay cho RLS của Supabase. Không còn dòng `HasQueryFilter` nào phải nhớ, nên cũng không
+  còn dòng nào để quên; hai test canh gác bắt trường hợp entity không implement interface.
+- **Repository không bao giờ gọi `IgnoreQueryFilters()`.** Đó là cách duy nhất phá được
+  lớp bảo vệ trên. Nó không xuất hiện ở đâu trong `Infrastructure/Persistence/Repositories`.
 - `user_id` **luôn** lấy từ claim `sub` của token. Không bao giờ nhận từ body hay query.
 - Tắt tiến trình API trước khi build bằng Visual Studio, không thì nó khoá file `.exe`.
 - **Không đụng `.RootElement` bên trong câu LINQ.** Cột `jsonb` ánh xạ sang `JsonDocument`;
@@ -51,6 +55,59 @@ Repo này: backend mới, deploy riêng, **không đụng gì vào app đang ch�
   (`solar`, `nas-uploader`, `storechecking`), và container đặt tiền tố theo tên app
   (`solar-web`, `storechecking-api`). Tên trống trơn kiểu `api` sẽ đụng ngay khi có app
   thứ hai.
+
+---
+
+## Kiến trúc — Clean Architecture, 4 project
+
+Tái cấu trúc ngày 2026-08-27, **trước** khi chuyển 17 bảng còn lại. Lý do làm bây giờ:
+rót 79 hàm vào một project phẳng rồi mới tách thì đắt gấp nhiều lần.
+
+```
+StoreChecking.Domain          thực thể, không phụ thuộc gì
+      ↑
+StoreChecking.Application     service, DTO, interface (repository, UoW, ICurrentUser)
+      ↑
+StoreChecking.Infrastructure  AppDbContext, cấu hình EF, repository, UnitOfWork
+      ↑
+StoreChecking.Api             Controller, Program.cs, đọc token
+```
+
+Mũi tên là chiều **phụ thuộc**, đọc từ dưới lên. `Domain` không biết ai; `Application`
+chỉ biết `Domain`; `Api` không hề tham chiếu EF Core.
+
+| Tầng | Chứa gì | KHÔNG được có gì |
+|---|---|---|
+| Domain | `WorkDay`, `EnglishWord`… và `IOwnedByUser` | mọi thư viện ngoài BCL |
+| Application | `EnglishService`, DTO, `IEnglishWordRepository`, `IUnitOfWork` | EF Core, ASP.NET |
+| Infrastructure | `AppDbContext`, `*Configuration`, `*Repository`, `DependencyInjection` | HttpContext |
+| Api | Controller, `HttpCurrentUser`, cấu hình JWT/CORS/Swagger | truy vấn EF |
+
+### Thêm một module mới cần đụng đâu
+
+1. `Domain/Entities/` — thực thể, cho implement `IOwnedByUser`.
+2. `Application/<Module>/` — DTO + service, và interface repository ở `Abstractions/`.
+3. `Infrastructure/Persistence/Configurations/` — ánh xạ cột (tên cột viết tay, phải khớp
+   `db/*.sql`); `Repositories/` — cài đặt.
+4. `Infrastructure/DependencyInjection.cs` — đăng ký repository và service.
+5. `Api/Controllers/` — controller mỏng, chỉ kiểm tra hình dạng request rồi gọi service.
+6. `tests/` — test hợp đồng cho từng endpoint + test cách ly hai user cho từng bảng.
+
+### Vài lựa chọn có chủ ý
+
+- **Application Service thuần, không CQRS/MediatR.** 12 endpoint hiện tại và ~79 hàm sắp
+  tới đều là CRUD; một Command + một Handler cho mỗi cái là ~160 file để không đổi lấy
+  điều gì. Nếu sau này có use case thật sự phức tạp thì thêm riêng cho nó.
+- **Repository trả về entity đã nạp, không trả `IQueryable`.** Trả `IQueryable` thì tầng
+  Application vẫn viết truy vấn EF, chỉ là qua một cái tên khác. Kèm lợi ích: không thể
+  vấp lại lỗi `.RootElement` trong LINQ, vì không còn projection nào ở tầng trên.
+- **Repository không lưu, `IUnitOfWork` mới lưu.** Nhờ vậy một use case đổi nhiều thứ thì
+  chúng cùng vào hoặc cùng không vào.
+- **`ValidationException` cho input sai, `null`/`false` cho không tìm thấy.** Middleware
+  ở `Program.cs` đổi exception thành `400 { error }`; controller đổi `null` thành 404.
+  Service nhờ đó không cần biết gì về HTTP.
+- **`/health` đi qua `IDatabaseHealth`** chứ không cầm thẳng `AppDbContext`, để project
+  `Api` không phải tham chiếu EF Core.
 
 ---
 
@@ -261,10 +318,10 @@ giá xứng đáng; với 12 endpoint như trước thì không.
 
 ### Lý do cũ vẫn còn nguyên, chấp nhận đánh đổi
 
-- **Mạng nhà thành điểm chết duy nhất.** Hiện app chạy bất kể nhà thế nào; sau khi chuyển
-  thì mất điện, mất mạng, hay NAS hỏng là mất tất cả trừ trang đặt hàng. Đây là cái giá
-  thật của việc gom về một chỗ, đã biết và chấp nhận.
-- **Viết lại 81 hàm không mang lại tính năng mới nào.** Giá trị nằm ở chỗ dễ bảo trì về
+- **Nhà thành điểm chết duy nhất.** *Mất điện thì không lo* — có pin lưu trữ của hệ solar,
+  NAS tự chạy lại sau ít phút. Còn lại vẫn đúng: đứt cáp/mất Internet, hỏng ổ cứng, hoặc
+  Tailscale trục trặc là mất tất cả trừ trang đặt hàng. Đã biết và chấp nhận.
+- **Viết lại 79 hàm không mang lại tính năng mới nào.** Giá trị nằm ở chỗ dễ bảo trì về
   sau, không nằm ở thứ người dùng nhìn thấy.
 
 ### Vẫn giữ
@@ -273,6 +330,62 @@ giá xứng đáng; với 12 endpoint như trước thì không.
 - Phần sinh câu bằng AI (`/api/english`, `/api/speaking`) **giữ trên Vercel** — không đụng
   database, `GEMINI_API_KEY` đã ở đó.
 - Solar, video, file lớn vẫn ở NAS như cũ.
+
+---
+
+## Bản đồ migrate — 22 bảng/view, 79 hàm
+
+Khảo sát ngày 2026-08-27 từ `D:\Dev\StoreChecking` (repo Angular, remote
+`InventoryAndTrackingProfit`). Nguồn: `src/app/core/supabase.service.ts` (851 dòng) và
+`supabase/*.sql`.
+
+| Module | Bảng / view | Số hàm | Trạng thái |
+|---|---|---|---|
+| Lịch làm | `work_days`, `work_month_notes` | 5 | ✅ có API, Angular chưa trỏ sang |
+| Tiếng Anh | `english_words`, `speaking_saved` | 6 | ✅ xong |
+| Ghi chú | `notes` | 4 | ⬜ chưa |
+| Đóng gói | `packing_videos` | 7 | ⬜ chưa |
+| Chi tiêu | `expense_categories`, `expenses`, `monthly_income`, `v_expense_month_total`, `v_expense_month_category` | 11 | ⬜ chưa |
+| Marketing | `marketing_groups`, `marketing_posts`, `marketing_post_targets`, `post_queue` | 16 | ⬜ chưa |
+| Kho hàng | `batches`, `products`, `sales`, `product_damages`, `product_stock`, `batch_summary` | 20 | ⬜ chưa |
+| Đơn hàng | `orders` | 3 | 🔒 **ở lại Supabase vĩnh viễn** |
+
+Thứ tự chuyển: **Ghi chú → Đóng gói → Chi tiêu → Marketing → Kho hàng.** Nhỏ và ít giá
+trị trước, đúng nguyên tắc đã có. Kho hàng đi sau cùng vì dữ liệu quý nhất và có nhiều
+thứ khó nhất.
+
+### Ba thứ KHÔNG chỉ là "viết lại hàm"
+
+**1. Trigger `check_stock()` là nghiệp vụ nằm trong database.** Nó chặn bán vượt tồn:
+`còn lại = nhập − đã bán − đã hỏng`. Trên Supabase, database tự chặn nên lỗi ở app cũng
+không bán âm được. Trigger viết bằng plpgsql thuần, **không đụng `auth.uid()`**, nên bê
+nguyên sang NAS được. Nên làm cả hai: giữ trigger làm chốt chặn cuối, và kiểm ở tầng
+Application để báo lỗi cho tử tế. Cùng lý lẽ với `HasQueryFilter` — đừng để một lớp duy
+nhất gánh.
+
+**2. Ảnh marketing nằm ở Supabase Storage, KHÔNG nằm trong Postgres.** Bucket `marketing`,
+dùng bởi `uploadMarketingImage`. `pg_dump` không mang nó theo. Phải tải riêng rồi đẩy sang
+NAS — đã có sẵn đường: `nas.service.ts` với endpoint `/upload`, đang dùng cho video đóng
+gói. Kèm theo: `post_queue.image_url` đang chứa URL công khai của Supabase, chuyển xong
+phải viết lại toàn bộ URL trong bảng đó.
+
+**3. `api/cron-post.js` trên Vercel đọc/ghi `post_queue` bằng `SUPABASE_SERVICE_ROLE_KEY`,
+bỏ qua RLS.** Đây là **máy gọi máy**, không có người đăng nhập. Khi `post_queue` chuyển
+sang NAS, cron đó phải gọi API .NET — mà API .NET hiện chỉ chấp nhận JWT người dùng của
+Supabase. **Cần thêm một đường xác thực mới cho máy** (API key hoặc token dịch vụ). Đây là
+lỗ hổng thiết kế thật, phải giải trước khi chuyển module Marketing.
+
+`api/order.js` cũng dùng service key, nhưng nó chỉ chạm `orders` — bảng ở lại Supabase,
+nên không ảnh hưởng.
+
+### Việc nhỏ hơn cần nhớ
+
+- Video đóng gói **đã nằm trên NAS rồi**; Supabase chỉ giữ metadata. Chuyển nhẹ nhàng.
+- 4 view (`product_stock`, `batch_summary`, `v_expense_month_*`) bê sang được, nhưng phải
+  **bỏ `with (security_invoker = true)`** — đó là thứ của RLS, bên NAS không có.
+- Mọi bảng đều có `user_id ... default auth.uid() references auth.users(id)`. Bỏ cả
+  default lẫn khoá ngoại khi bê sang, y như đã làm ở `db/001` và `db/002`.
+- View cũng có `user_id`, nên vẫn đặt `HasQueryFilter` được — và test canh gác sẽ đòi.
 
 ---
 

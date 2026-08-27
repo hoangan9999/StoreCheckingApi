@@ -1,18 +1,19 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using StoreChecking.Api.Data;
+using StoreChecking.Infrastructure.Persistence;
 
 namespace StoreChecking.ContractTests;
 
 /// <summary>
 /// Fails the build the moment a table is added without an owner filter.
 /// <para>Supabase's row level security let the database itself refuse to hand back another
-/// user's rows. Nothing here does that. What replaces it is one line per entity —
-/// <c>HasQueryFilter(x =&gt; x.UserId == _user.Id)</c> — and a line someone has to remember
-/// is not a safety net, it is a hope. With the rest of the app moving off Supabase, that
-/// hope would have to hold across roughly fifteen more tables.</para>
-/// <para>So the convention is checked by machine instead. A new entity mapped without a
-/// filter turns this test red before the leak can ever ship.</para>
+/// user's rows. Nothing here does that. AppDbContext applies the replacement automatically
+/// to every entity implementing <c>IOwnedByUser</c>, so the usual way to get this wrong —
+/// forgetting a HasQueryFilter line — is gone.</para>
+/// <para>These tests cover the way that is left: an entity that simply never implemented
+/// the interface. The generation step cannot notice that; a test comparing the finished
+/// model against reality can. With roughly fifteen more tables arriving as the rest of the
+/// app moves off Supabase, the difference matters.</para>
 /// </summary>
 [Collection(nameof(ApiCollection))]
 public sealed class QueryFilterGuardTests(ApiFactory api)
@@ -33,7 +34,7 @@ public sealed class QueryFilterGuardTests(ApiFactory api)
         Assert.True(unprotected.Count == 0,
             "Những entity sau chưa có HasQueryFilter, nghĩa là truy vấn quên Where sẽ trả " +
             "dữ liệu của người khác:\n  " + string.Join("\n  ", unprotected) +
-            "\nThêm HasQueryFilter(x => x.UserId == _user.Id) trong AppDbContext.OnModelCreating.");
+            "\nCho entity đó implement IOwnedByUser là xong — AppDbContext tự gắn filter.");
     }
 
     /// <summary>

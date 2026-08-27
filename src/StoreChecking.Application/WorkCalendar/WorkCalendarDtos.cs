@@ -1,4 +1,4 @@
-namespace StoreChecking.Api.Dtos;
+namespace StoreChecking.Application.WorkCalendar;
 
 /// <summary>A day cell as returned to the client, using the field names Angular already expects.</summary>
 public record WorkDayDto(Guid Id, string Day, string Note, string? Color);

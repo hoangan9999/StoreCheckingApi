@@ -1,4 +1,6 @@
-namespace StoreChecking.Api.Models;
+using StoreChecking.Domain.Abstractions;
+
+namespace StoreChecking.Domain.Entities;
 
 /// <summary>
 /// One line of free-text note attached to a whole month, shown under the calendar grid.
@@ -6,7 +8,7 @@ namespace StoreChecking.Api.Models;
 /// 26th of the previous month to the 25th, so the cycle 26 Sep → 25 Oct 2026 has
 /// Period = 2026-10-01.</para>
 /// </summary>
-public class WorkMonthNote
+public class WorkMonthNote : IOwnedByUser
 {
     public Guid Id { get; set; }
 

@@ -7,7 +7,12 @@
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG TARGETARCH
 WORKDIR /src
-COPY src/StoreChecking.Api/StoreChecking.Api.csproj src/StoreChecking.Api/
+# All four project files first, then restore: this layer is cached until a csproj
+# changes, so editing code does not re-download every NuGet package.
+COPY src/StoreChecking.Domain/StoreChecking.Domain.csproj                 src/StoreChecking.Domain/
+COPY src/StoreChecking.Application/StoreChecking.Application.csproj       src/StoreChecking.Application/
+COPY src/StoreChecking.Infrastructure/StoreChecking.Infrastructure.csproj src/StoreChecking.Infrastructure/
+COPY src/StoreChecking.Api/StoreChecking.Api.csproj                       src/StoreChecking.Api/
 RUN dotnet restore -a $TARGETARCH src/StoreChecking.Api/StoreChecking.Api.csproj
 COPY . .
 RUN dotnet publish -a $TARGETARCH --no-restore -c Release -o /app src/StoreChecking.Api/StoreChecking.Api.csproj

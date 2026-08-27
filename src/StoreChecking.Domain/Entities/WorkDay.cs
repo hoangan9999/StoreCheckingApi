@@ -1,4 +1,6 @@
-namespace StoreChecking.Api.Models;
+using StoreChecking.Domain.Abstractions;
+
+namespace StoreChecking.Domain.Entities;
 
 /// <summary>
 /// One day cell in the work calendar. A row exists only when the cell has a note
@@ -6,7 +8,7 @@ namespace StoreChecking.Api.Models;
 /// <para><c>Color</c> holds a colour KEY ('vang', 'luc', …), not a hex code, so the
 /// Angular side can render it correctly in both light and dark themes.</para>
 /// </summary>
-public class WorkDay
+public class WorkDay : IOwnedByUser
 {
     public Guid Id { get; set; }
 

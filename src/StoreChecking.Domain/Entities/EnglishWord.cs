@@ -1,11 +1,13 @@
 using System.Text.Json;
 
-namespace StoreChecking.Api.Models;
+using StoreChecking.Domain.Abstractions;
+
+namespace StoreChecking.Domain.Entities;
 
 /// <summary>
 /// A saved vocabulary word together with everything the AI generated for it.
 /// </summary>
-public class EnglishWord
+public class EnglishWord : IOwnedByUser
 {
     public Guid Id { get; set; }
 

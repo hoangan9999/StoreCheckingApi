@@ -1,11 +1,10 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using StoreChecking.Api.Auth;
-using StoreChecking.Api.Data;
-using StoreChecking.Api.Endpoints;
+using StoreChecking.Application.Abstractions;
+using StoreChecking.Application.Common;
+using StoreChecking.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +12,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Validate everything here and fail LOUDLY at startup. Letting a missing setting through
 // produces a confusing crash on the first request ("MetadataAddress or Authority must use
 // HTTPS") that points nowhere near the real cause.
+//
+// This runs BEFORE builder.Build(), which matters for the contract tests: configuration
+// has to reach the process as environment variables, because anything added at Build()
+// time arrives after these checks have already thrown.
 var connString = builder.Configuration.GetConnectionString("Postgres");
 if (string.IsNullOrWhiteSpace(connString))
 {
@@ -44,8 +47,12 @@ var swaggerEnabled = builder.Configuration.GetValue("Swagger:Enabled", builder.E
 
 // ---------- Services ----------
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<CurrentUser>();
-builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connString));
+builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+
+// Repositories, unit of work and the application services all come from one place.
+builder.Services.AddInfrastructure(connString);
+
+builder.Services.AddControllers();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -101,6 +108,11 @@ if (swaggerEnabled)
                 "JSON.parse(Object.entries(localStorage).find(([k])=>k.includes('auth-token'))[1].replace(/^base64-/,(m)=>'')).access_token",
         });
 
+        // Endpoint summaries come from the XML doc comments on the controller actions, so
+        // the Vietnamese labels in Swagger live next to the code they describe.
+        var xml = Path.Combine(AppContext.BaseDirectory, "StoreChecking.Api.xml");
+        if (File.Exists(xml)) c.IncludeXmlComments(xml);
+
         // Authorize button: paste the token once and every later request carries the header.
         // Microsoft.OpenApi v2 (Swashbuckle 10) dropped the Reference property on
         // OpenApiSecurityScheme, so it has to be referenced via OpenApiSecuritySchemeReference.
@@ -137,7 +149,7 @@ if (swaggerEnabled)
 
 app.UseCors();
 
-// Turn an unhandled exception into a readable JSON 500 instead of an empty one.
+// Turns the two kinds of failure into the two responses the client expects.
 //
 // Must sit AFTER UseCors. The built-in handling clears the response before writing the
 // 500, which throws away the CORS headers with it — and a 500 without those headers
@@ -148,6 +160,15 @@ app.Use(async (ctx, next) =>
     try
     {
         await next();
+    }
+    catch (ValidationException ex)
+    {
+        // A use case refusing its input. Not a fault: the message is meant for the user,
+        // and the shape { error } is what the Angular app reads.
+        if (ctx.Response.HasStarted) throw;
+
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await ctx.Response.WriteAsJsonAsync(new { error = ex.Message });
     }
     catch (Exception ex)
     {
@@ -168,41 +189,12 @@ app.Use(async (ctx, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ---------- Endpoints ----------
-
-// Which build is running, baked into the image at build time (see Dockerfile).
-// This is what makes a deploy verifiable from the outside: tools/deploy.ps1 waits until
-// /health reports the exact version it just pushed, so "deployed" is a fact, not a hope.
-var appVersion = Environment.GetEnvironmentVariable("APP_VERSION") ?? "dev";
-
-// Liveness probe: used by the Docker healthcheck, and tells us whether the DB is reachable.
-app.MapGet("/health", async (AppDbContext db) =>
-{
-    var dbOk = await db.Database.CanConnectAsync();
-    return Results.Ok(new { ok = true, db = dbOk, version = appVersion });
-})
-.WithName("Health")
-.WithSummary("Sống chưa, DB nối được chưa (không cần token)")
-.WithTags("Hệ thống");
-
-// Quick way to check whether the supplied token is valid and which user it belongs to.
-app.MapGet("/api/me", (CurrentUser me, ClaimsPrincipal user) => Results.Ok(new
-{
-    userId = me.Id,
-    email = user.FindFirst("email")?.Value,
-}))
-.RequireAuthorization()
-.WithName("Me")
-.WithSummary("Token có hợp lệ không, user id là ai")
-.WithTags("Hệ thống");
-
-app.MapWorkCalendar();
-app.MapEnglish();
+app.MapControllers();
 
 app.Run();
 
 // Exposes the implicit Program class generated from these top-level statements so the
 // contract tests can boot the real application through WebApplicationFactory<Program>.
-// Testing the assembled app is the point: a test that wires services by hand would not
+// Testing the assembled app is the point: a test that wired services by hand would not
 // notice a route, a filter or a JSON setting going missing.
 public partial class Program;

@@ -1,9 +1,11 @@
-namespace StoreChecking.Api.Models;
+using StoreChecking.Domain.Abstractions;
+
+namespace StoreChecking.Domain.Entities;
 
 /// <summary>
 /// One English sentence kept from a speaking practice session, for later review.
 /// </summary>
-public class SavedSentence
+public class SavedSentence : IOwnedByUser
 {
     public Guid Id { get; set; }
 

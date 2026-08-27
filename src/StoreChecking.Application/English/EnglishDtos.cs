@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace StoreChecking.Api.Dtos;
+namespace StoreChecking.Application.English;
 
 /// <summary>A saved vocabulary word as returned to the client.</summary>
 public record EnglishWordDto(Guid Id, string Word, JsonElement Data, DateTimeOffset CreatedAt);
