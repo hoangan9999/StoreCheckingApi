@@ -91,6 +91,27 @@ public sealed class IsolationContractTests(ApiFactory api)
     }
 
     [DbFact]
+    public async Task Ghi_chu_nhanh_cua_nguoi_khac_khong_doc_sua_hay_xoa_duoc()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        var mine = await Json.Read(await a.PostJson("/api/notes",
+            new { title = "STK cua A", content = "0123456789" }));
+        var id = mine.GetProperty("id").GetGuid();
+
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/notes"))).GetArrayLength());
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await b.PutJson($"/api/notes/{id}", new { title = "B sua trom", content = "9999" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await b.DeleteAsync($"/api/notes/{id}")).StatusCode);
+
+        // Untouched.
+        var still = await Json.Read(await a.GetAsync("/api/notes"));
+        Assert.Equal(1, still.GetArrayLength());
+        Assert.Equal("0123456789", still[0].GetProperty("content").GetString());
+    }
+
+    [DbFact]
     public async Task Luu_trung_cau_chi_tinh_trong_pham_vi_mot_nguoi()
     {
         var a = api.ClientFor(Guid.NewGuid());

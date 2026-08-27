@@ -16,10 +16,11 @@ Nền tảng đã xong, sẵn sàng rót module vào.
 | Việc | Trạng thái |
 |---|---|
 | Deploy tự động (Actions → GHCR → watchtower) | ✅ chạy thật, một lệnh `.\tools\deploy.ps1` |
-| Test hợp đồng khoá 12 endpoint | ✅ 33 test, chạy trên CI với Postgres thật |
+| Test hợp đồng | ✅ 44 test, chạy trên CI với Postgres thật |
 | Cổng chặn: test đỏ thì không deploy | ✅ `build` job `needs: test` |
 | Clean Architecture 4 project | ✅ commit `a83ee20` |
 | Query filter tự động theo `IOwnedByUser` | ✅ + 2 test canh gác |
+| **Module Ghi chú** | 🔄 backend xong, chờ Angular trỏ sang + chuyển dữ liệu |
 
 ### Việc tiếp theo — chuyển module
 
@@ -32,7 +33,8 @@ Mỗi module đi đúng vòng này, hết vòng mới sang module sau:
 2. Domain → Application → Infrastructure → Api, theo bảng phân tầng ở trên.
 3. Test hợp đồng cho từng endpoint + test cách ly hai user cho từng bảng.
 4. Deploy, nạp SQL vào Postgres trên NAS.
-5. Chuyển dữ liệu bằng `pg_dump --data-only` **đúng lúc cắt sang**, không chuyển trước.
+5. Chuyển dữ liệu **đúng lúc cắt sang**, không chuyển trước:
+   `./tools/migrate-from-supabase.sh <tên bảng>...` (chạy trên NAS, cần `SUPABASE_DB_URL`).
 6. Angular trỏ sang API mới, rồi mới xoá hàm Supabase tương ứng.
 
 ### Hai thứ phải giải TRƯỚC khi tới Marketing
@@ -399,7 +401,7 @@ Khảo sát ngày 2026-08-27 từ `D:\Dev\StoreChecking` (repo Angular, remote
 |---|---|---|---|
 | Lịch làm | `work_days`, `work_month_notes` | 5 | ✅ có API, Angular chưa trỏ sang |
 | Tiếng Anh | `english_words`, `speaking_saved` | 6 | ✅ xong |
-| Ghi chú | `notes` | 4 | ⬜ chưa |
+| Ghi chú | `notes` | 4 | 🔄 API xong, Angular chưa trỏ sang |
 | Đóng gói | `packing_videos` | 7 | ⬜ chưa |
 | Chi tiêu | `expense_categories`, `expenses`, `monthly_income`, `v_expense_month_total`, `v_expense_month_category` | 11 | ⬜ chưa |
 | Marketing | `marketing_groups`, `marketing_posts`, `marketing_post_targets`, `post_queue` | 16 | ⬜ chưa |

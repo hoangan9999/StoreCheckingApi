@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser u
     public DbSet<WorkMonthNote> WorkMonthNotes => Set<WorkMonthNote>();
     public DbSet<EnglishWord> EnglishWords => Set<EnglishWord>();
     public DbSet<SavedSentence> SavedSentences => Set<SavedSentence>();
+    public DbSet<Note> Notes => Set<Note>();
 
     /// <summary>
     /// Read by the generated query filters, once per query.

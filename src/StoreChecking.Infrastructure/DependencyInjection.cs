@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using StoreChecking.Application.Abstractions;
 using StoreChecking.Application.English;
+using StoreChecking.Application.Notes;
 using StoreChecking.Application.WorkCalendar;
 using StoreChecking.Infrastructure.Persistence;
 using StoreChecking.Infrastructure.Persistence.Repositories;
@@ -27,12 +28,14 @@ public static class DependencyInjection
         services.AddScoped<IWorkMonthNoteRepository, WorkMonthNoteRepository>();
         services.AddScoped<IEnglishWordRepository, EnglishWordRepository>();
         services.AddScoped<ISavedSentenceRepository, SavedSentenceRepository>();
+        services.AddScoped<INoteRepository, NoteRepository>();
 
         // ---------- Application services ----------
         // Registered here rather than in a separate AddApplication(): they have no
         // configuration of their own, and one list is easier to keep complete than two.
         services.AddScoped<WorkCalendarService>();
         services.AddScoped<EnglishService>();
+        services.AddScoped<NotesService>();
 
         return services;
     }
