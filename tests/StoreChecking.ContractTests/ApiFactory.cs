@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace StoreChecking.ContractTests;
@@ -17,28 +16,38 @@ namespace StoreChecking.ContractTests;
 /// </summary>
 public sealed class ApiFactory : WebApplicationFactory<Program>
 {
+    // Configuration MUST arrive as environment variables, and MUST be set before the host
+    // is ever created.
+    //
+    // Program.cs reads its settings in the top-level statements, well before
+    // builder.Build(). WebApplicationFactory's ConfigureAppConfiguration only takes effect
+    // AT Build(), by which point Program.cs has already thrown
+    // "Thiếu ConnectionStrings__Postgres". Environment variables are read by
+    // WebApplication.CreateBuilder itself, so they are in place in time — and they are how
+    // docker-compose configures the real deployment anyway.
+    //
+    // A static constructor runs before any instance of this class exists, which is early
+    // enough: the host is only built when a test first asks for a client.
+    static ApiFactory()
+    {
+        Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", TestDatabase.ConnectionString);
+
+        // Never contacted: the JwtBearer scheme is registered but the default scheme is
+        // overridden below, so no metadata is ever fetched. The value still has to satisfy
+        // the startup validation in Program.cs.
+        Environment.SetEnvironmentVariable("Auth__SupabaseUrl", "https://test-project.supabase.co");
+        Environment.SetEnvironmentVariable("Cors__Origins", "https://example.test");
+        Environment.SetEnvironmentVariable("Swagger__Enabled", "false");
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Production");
-
-        builder.ConfigureAppConfiguration((_, cfg) =>
-        {
-            cfg.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:Postgres"] = TestDatabase.ConnectionString,
-                // Never contacted: the JwtBearer scheme is registered but the default
-                // scheme is overridden below, so no metadata is ever fetched. The value
-                // still has to satisfy the startup validation in Program.cs.
-                ["Auth:SupabaseUrl"] = "https://test-project.supabase.co",
-                ["Cors:Origins"] = "https://example.test",
-                ["Swagger:Enabled"] = "false",
-            });
-        });
-
+        // Unlike configuration, service registration DOES arrive in time: these callbacks
+        // run during Build(), after Program.cs has registered its own services, so this
+        // last AddAuthentication call is the one that decides the default scheme.
         builder.ConfigureTestServices(services =>
         {
-            // Runs after the app's own registrations, so this AddAuthentication call is
-            // the one that decides the default scheme.
             services
                 .AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(

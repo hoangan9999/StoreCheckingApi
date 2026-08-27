@@ -240,24 +240,39 @@ Chỉ còn `docker-compose.yml`, `.env`, `db/`, `pgdata/`, `ts-config/`, `ts-sta
 
 ---
 
-## ❌ ĐÃ QUYẾT: các tính năng khác KHÔNG chuyển
+## ↩️ ĐẢO CHIỀU 2026-08-27: chuyển TẤT CẢ sang .NET, trừ đơn hàng
 
-Quyết định ngày 2026-08-25. Kho hàng, chi tiêu, đơn hàng, marketing, video, ghi chú
-**ở lại Supabase vĩnh viễn**.
+Quyết định ngày 2026-08-25 (giữ mọi thứ ở Supabase) **đã bị thay thế**. Nay: kho hàng,
+chi tiêu, marketing, video, ghi chú — **tất cả chuyển sang .NET trên NAS**. Chỉ `orders`
+ở lại Supabase.
 
-Lý do:
+Lý do đổi ý: muốn gom về một nơi để **dễ bảo trì lâu dài**, chứ không phải vì Supabase
+có vấn đề gì. Đó cũng là lý do làm Clean Architecture — với ~81 hàm thì kiến trúc trả
+giá xứng đáng; với 12 endpoint như trước thì không.
 
-- Chuyển không mang lại tính năng mới nào — chỉ là viết lại 81 hàm để có đúng thứ đang có
-- Không có nỗi đau nào cần chữa: không đụng trần free tier, không vấn đề chi phí
-- Đưa về NAS thì mạng nhà thành điểm chết duy nhất; hiện app chạy bất kể nhà thế nào
-- **Trang đặt hàng `/order` là trang công khai, khách quét QR để dùng** — khách không thể
-  cài Tailscale, và Vercel không thể nằm trong tailnet. Chuyển `orders` về NAS là giết
-  tính năng có khách thật đang dùng
-- Mất RLS: bên Supabase database tự chặn rò rỉ; bên .NET là quy ước do người nhớ
-- Chủ repo đã có sẵn cơ chế sao lưu dữ liệu
+### Lý do cũ nào đã được xử lý
 
-Nguyên tắc thay thế: **đặt dữ liệu ở nơi nó thuộc về.** Thứ gắn với nhà (solar, video,
-file lớn) thì ở NAS. Thứ cần chạy mọi lúc mọi nơi thì ở cloud.
+- **Trang `/order` công khai** — xử lý bằng cách để `orders` ở lại Supabase. Khách quét QR
+  vẫn dùng được, không phụ thuộc mạng nhà.
+- **Mất RLS** — đang được thay bằng bộ test hợp đồng: mỗi bảng có test chứng minh user B
+  không đọc/sửa/xoá được dòng của A, kể cả khi biết Id. Cộng thêm một test quét toàn bộ
+  entity trong `AppDbContext` và **đỏ nếu có bảng nào thiếu `HasQueryFilter`** — biến quy
+  ước phải-nhớ thành thứ máy tự bắt.
+
+### Lý do cũ vẫn còn nguyên, chấp nhận đánh đổi
+
+- **Mạng nhà thành điểm chết duy nhất.** Hiện app chạy bất kể nhà thế nào; sau khi chuyển
+  thì mất điện, mất mạng, hay NAS hỏng là mất tất cả trừ trang đặt hàng. Đây là cái giá
+  thật của việc gom về một chỗ, đã biết và chấp nhận.
+- **Viết lại 81 hàm không mang lại tính năng mới nào.** Giá trị nằm ở chỗ dễ bảo trì về
+  sau, không nằm ở thứ người dùng nhìn thấy.
+
+### Vẫn giữ
+
+- `orders` **ở lại Supabase vĩnh viễn** — không bàn lại.
+- Phần sinh câu bằng AI (`/api/english`, `/api/speaking`) **giữ trên Vercel** — không đụng
+  database, `GEMINI_API_KEY` đã ở đó.
+- Solar, video, file lớn vẫn ở NAS như cũ.
 
 ---
 
