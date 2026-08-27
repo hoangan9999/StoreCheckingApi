@@ -1,5 +1,6 @@
-# Builds the API image and pushes it to GHCR. The PC no longer needs Docker at all:
-# this is a company laptop, and Docker Desktop needs a paid licence there.
+# Runs the contract tests, then builds the API image and pushes it to GHCR. The PC no
+# longer needs Docker at all: it is a company laptop, and Docker Desktop needs a paid
+# licence there.
 #
 # The NAS must NEVER build .NET either — a build pins its CPU for 5-15 minutes and drags
 # everything else down, phone uploads included. So GitHub builds, GHCR carries the image,
@@ -19,7 +20,61 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/storechecking-api
 
 jobs:
+  # The contract tests need a real PostgreSQL: jsonb, ILIKE, gen_random_uuid() defaults and
+  # the ordering that keeps paging stable all behave differently on an in-memory provider.
+  # There is no Docker on the development machine, so this is the only place they run.
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: storechecking_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Without the health check the test step can start before the server accepts
+        # connections, and the suite then SKIPS itself instead of failing — a green run
+        # that tested nothing.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Chạy test hợp đồng
+        env:
+          TEST_POSTGRES: Host=localhost;Port=5432;Database=storechecking_test;Username=postgres;Password=postgres
+        run: |
+          dotnet test StoreChecking.sln --configuration Release \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=results.trx" --results-directory ./trx
+
+      # A skipped suite must never pass for a green build. These tests skip themselves
+      # when no database answers — right on the development machine, badly wrong here,
+      # where it would wave an untested commit straight through to the NAS.
+      - name: Chặn trường hợp test tự bỏ qua hết
+        run: |
+          passed=$(grep -o 'passed="[0-9]*"' ./trx/results.trx | head -1 | grep -o '[0-9]*')
+          echo "Số test đạt: ${passed:-0}"
+          if [ "${passed:-0}" -lt 1 ]; then
+            echo "::error::Không có test nào chạy thật — nhiều khả năng không nối được PostgreSQL."
+            exit 1
+          fi
+
   build:
+    # Nothing reaches GHCR, and therefore nothing reaches the NAS, unless the contract
+    # tests pass. This is the gate the pipeline was missing.
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -3,3 +3,4 @@ obj/
 pgdata/
 .env
 .git/
+tests/

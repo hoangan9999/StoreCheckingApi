@@ -200,3 +200,9 @@ app.MapWorkCalendar();
 app.MapEnglish();
 
 app.Run();
+
+// Exposes the implicit Program class generated from these top-level statements so the
+// contract tests can boot the real application through WebApplicationFactory<Program>.
+// Testing the assembled app is the point: a test that wires services by hand would not
+// notice a route, a filter or a JSON setting going missing.
+public partial class Program;
