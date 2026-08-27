@@ -144,6 +144,9 @@ nó không đụng database, và `GEMINI_API_KEY` đang ở đó rồi. Không c
 
 ## Deploy — GitHub build, NAS tự cập nhật
 
+✅ **Chạy thật từ 2026-08-27.** NAS đã bỏ ảnh tự build, nay chạy ảnh kéo từ GHCR:
+`/health` trả `{"ok":true,"db":true,"version":"e27039f"}`.
+
 **Không máy nào ở nhà build .NET nữa.**
 
 - NAS không build: ăn CPU 5-15 phút và kéo mọi thứ khác ì theo, kể cả upload video từ
