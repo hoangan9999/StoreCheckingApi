@@ -14,12 +14,16 @@
 #  Run this AT CUT-OVER, not before. Copy early and Supabase keeps taking writes, the two
 #  sides drift, and the whole thing has to be redone.
 #
-#  Usage:
-#    export SUPABASE_DB_URL='postgresql://postgres:PASSWORD@db.xxxx.supabase.co:5432/postgres'
-#    ./tools/migrate-from-supabase.sh notes
-#    ./tools/migrate-from-supabase.sh english_words speaking_saved
+#  RUNS ON THE NAS, over SSH. It needs Docker and it needs to reach the
+#  storechecking-db container, neither of which exists on the development machine.
 #
-#  The password is Supabase -> Project Settings -> Database (NOT the anon/publishable key).
+#  Usage (from /volume1/docker/storechecking):
+#    export SUPABASE_DB_URL='postgresql://postgres:PASSWORD@db.xxxx.supabase.co:5432/postgres'
+#    DOCKER="sudo docker" ./tools/migrate-from-supabase.sh notes
+#    DOCKER="sudo docker" ./tools/migrate-from-supabase.sh english_words speaking_saved
+#
+#  The password is Supabase -> Project Settings -> Database (NOT the anon/publishable key),
+#  and the DIRECT connection on port 5432 — the pooler on 6543 cannot serve pg_dump.
 #  Pass it through the environment so it never lands in shell history or in this repo.
 # ============================================================
 set -euo pipefail
@@ -29,6 +33,10 @@ NAS_CONTAINER="${NAS_CONTAINER:-storechecking-db}"
 NAS_USER="${NAS_USER:-storechecking}"
 NAS_DB="${NAS_DB:-storechecking}"
 DUMP_DIR="${DUMP_DIR:-./_migration}"
+
+# Synology needs root for the Docker socket, so the NAS runs this as DOCKER="sudo docker".
+# Left as plain `docker` by default for anywhere that does not.
+DOCKER="${DOCKER:-docker}"
 
 TABLES=("$@")
 if [[ ${#TABLES[@]} -eq 0 ]]; then
@@ -51,7 +59,7 @@ mkdir -p "$DUMP_DIR"
 echo "=== Rows on Supabase ==="
 declare -A before
 for t in "${TABLES[@]}"; do
-  n=$(docker run --rm -e PGURL="$SUPABASE_DB_URL" "$PG_IMAGE" \
+  n=$($DOCKER run --rm -e PGURL="$SUPABASE_DB_URL" "$PG_IMAGE" \
         psql "$SUPABASE_DB_URL" -tAc "select count(*) from public.$t")
   before[$t]=$n
   printf "  %-16s %s\n" "$t" "$n"
@@ -61,19 +69,19 @@ done
 echo
 echo "=== Rows already on the NAS (should normally be 0) ==="
 for t in "${TABLES[@]}"; do
-  n=$(docker exec "$NAS_CONTAINER" psql -U "$NAS_USER" -d "$NAS_DB" -tAc "select count(*) from public.$t" 2>/dev/null || echo "TABLE MISSING")
+  n=$($DOCKER exec "$NAS_CONTAINER" psql -U "$NAS_USER" -d "$NAS_DB" -tAc "select count(*) from public.$t" 2>/dev/null || echo "TABLE MISSING")
   printf "  %-16s %s\n" "$t" "$n"
   if [[ "$n" == "TABLE MISSING" ]]; then
     echo >&2
     echo "ERROR: table $t does not exist on the NAS yet. Apply the schema first:" >&2
-    echo "  docker exec -i $NAS_CONTAINER psql -U $NAS_USER -d $NAS_DB < db/00N-<module>.sql" >&2
+    echo "  $DOCKER exec -i $NAS_CONTAINER psql -U $NAS_USER -d $NAS_DB < db/00N-<module>.sql" >&2
     exit 1
   fi
   if [[ "$n" != "0" ]]; then
     echo >&2
     echo "ERROR: $t already holds $n rows on the NAS. Refusing to run — a second pass" >&2
     echo "would duplicate everything. Empty the table first if you meant to re-import:" >&2
-    echo "  docker exec $NAS_CONTAINER psql -U $NAS_USER -d $NAS_DB -c 'truncate table $t'" >&2
+    echo "  $DOCKER exec $NAS_CONTAINER psql -U $NAS_USER -d $NAS_DB -c 'truncate table $t'" >&2
     exit 1
   fi
 done
@@ -83,7 +91,7 @@ echo
 echo "=== Dumping (data only) ==="
 ARGS=()
 for t in "${TABLES[@]}"; do ARGS+=(--table="public.$t"); done
-docker run --rm "$PG_IMAGE" \
+$DOCKER run --rm "$PG_IMAGE" \
   pg_dump "$SUPABASE_DB_URL" --data-only --no-owner --no-privileges "${ARGS[@]}" \
   > "$DUMP_FILE"
 echo "  wrote $DUMP_FILE ($(wc -c < "$DUMP_FILE") bytes)"
@@ -92,7 +100,7 @@ echo "  wrote $DUMP_FILE ($(wc -c < "$DUMP_FILE") bytes)"
 # The NAS database container publishes no port on purpose, so feed psql from inside it.
 echo
 echo "=== Restoring into the NAS ==="
-docker exec -i "$NAS_CONTAINER" psql -U "$NAS_USER" -d "$NAS_DB" -v ON_ERROR_STOP=1 \
+$DOCKER exec -i "$NAS_CONTAINER" psql -U "$NAS_USER" -d "$NAS_DB" -v ON_ERROR_STOP=1 \
   < "$DUMP_FILE" > /dev/null
 echo "  done"
 
@@ -101,7 +109,7 @@ echo
 echo "=== Verifying ==="
 fail=0
 for t in "${TABLES[@]}"; do
-  after=$(docker exec "$NAS_CONTAINER" psql -U "$NAS_USER" -d "$NAS_DB" -tAc "select count(*) from public.$t")
+  after=$($DOCKER exec "$NAS_CONTAINER" psql -U "$NAS_USER" -d "$NAS_DB" -tAc "select count(*) from public.$t")
   if [[ "$after" == "${before[$t]}" ]]; then
     printf "  [OK]   %-16s %s rows\n" "$t" "$after"
   else
