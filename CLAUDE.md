@@ -545,9 +545,34 @@ nhất để app trên Vercel gọi được API trên NAS.
 Hệ quả kèm theo: **thiết bị không cần bật Tailscale nữa** — địa chỉ đã công khai. Bảo vệ
 nằm ở JWT: mọi endpoint dữ liệu đều đòi token Supabase hợp lệ, chỉ `/health` là mở.
 
+### ⚡ Nhưng BẬT Tailscale trên điện thoại thì nhanh hơn nhiều
+
+Cửa ngõ Funnel nằm ở **Tokyo** — `nas-uploader` và `storechecking` cùng phân giải ra
+`103.84.155.153` / `103.84.155.217`, tra ra NetActuate AS36236, Tokyo JP.
+
+Nên khi **tắt** Tailscale, mọi byte đi: điện thoại → đường lên nhà mạng → Tokyo → đường
+xuống → NAS. Cái NAS cách điện thoại vài mét mà dữ liệu bay sang Nhật rồi quay về.
+
+Khi **bật** Tailscale, MagicDNS phân giải cùng tên đó ra địa chỉ tailnet `100.x`, hai máy
+nối thẳng qua LAN. Cùng một URL, chỉ khác nó trỏ đi đâu.
+
+**Đo được, 2026-08-27:** upload video đóng gói chậm hẳn khi tắt Tailscale, nhanh khi bật —
+chủ repo tự thử ra. Với API thì biểu hiện nhẹ hơn nhưng cùng gốc: bắt tay TLS qua Funnel
+luôn tốn ~1 giây, chính là mấy vòng đi-về Tokyo.
+
+Kết luận thực dụng:
+
+- **Ở nhà, quay clip đóng gói thì bật Tailscale trên điện thoại.** Đây là thứ quyết định
+  tốc độ upload, không phải CPU của NAS hay chuyện đa luồng.
+- Funnel vẫn để đó làm đường lui: đi ra ngoài, không có Tailscale, mọi thứ vẫn chạy —
+  chỉ chậm hơn.
+- Lưu ý câu ở trên cần đọc đúng: "không cần bật Tailscale" nghĩa là **vẫn dùng được**,
+  không có nghĩa là **nhanh như nhau**.
+
 Hai hướng còn lại nếu sau này muốn bỏ ràng buộc phải bật Tailscale:
 
-- **Tailscale + Funnel** (đang dùng) — công khai, điện thoại KHÔNG cần bật app
+- **Tailscale + Funnel** (đang dùng) — công khai, điện thoại không BẮT BUỘC bật app,
+  nhưng bật thì nhanh hơn hẳn (xem mục trên)
 - **Cloudflare Tunnel** — không cần cài gì trên điện thoại, không mở port, miễn phí.
   ⚠️ Điều khoản Cloudflare cấm dùng bản miễn phí để phục vụ video/file lớn, nên nếu chọn
   hướng này thì **chỉ đẩy API qua đó, video vẫn đi Tailscale như hiện tại**
