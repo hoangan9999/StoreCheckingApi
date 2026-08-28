@@ -9,7 +9,7 @@ Repo này: backend mới, deploy riêng.
 
 ---
 
-## 📌 ĐANG Ở ĐÂU — cập nhật 2026-08-27
+## 📌 ĐANG Ở ĐÂU — cập nhật 2026-08-29
 
 Nền tảng đã xong, sẵn sàng rót module vào.
 
@@ -20,40 +20,48 @@ Nền tảng đã xong, sẵn sàng rót module vào.
 | Cổng chặn: test đỏ thì không deploy | ✅ `build` job `needs: test` |
 | Clean Architecture 4 project | ✅ commit `a83ee20` |
 | Query filter tự động theo `IOwnedByUser` | ✅ + 2 test canh gác |
-| Schema toàn bộ 22 bảng/view | ✅ `db/001`–`007`, API tự nạp lúc khởi động |
-| **Module Ghi chú** | 🔄 backend xong, chờ Angular trỏ sang + chuyển dữ liệu |
+| Schema toàn bộ 22 bảng/view | ✅ `db/001`–`008`, API tự nạp lúc khởi động |
+| **Chuyển dữ liệu 17 bảng** | ✅ xong 2026-08-29, số dòng khớp cả hai bên |
+| **Module Ghi chú** | 🔄 backend xong, chờ Angular trỏ sang |
 
-### 🔴 ĐANG DỪNG Ở ĐÂY — 2026-08-27, làm tiếp khi về nhà
+### ✅ Chuyển dữ liệu — XONG 2026-08-29
 
-**Việc dở:** chép dữ liệu từ Supabase sang NAS, một lần cho cả 17 bảng.
-Schema đã xong hết (`db/001`–`007`, API tự nạp). Chỉ còn đúng bước chép dữ liệu.
+Chép một lần cho cả 17 bảng (trừ `orders`, ở lại Supabase vĩnh viễn). Số dòng khớp hai
+bên, tổng ~474 dòng. **Chủ repo đã ngừng dùng product từ 2026-08-29**, nên dữ liệu chép
+sang là bản cuối — không còn chuyện hai bên lệch nhau, không phải chép lại.
 
-Quyết định: **chép một lần cho cả 17 bảng**, không chia theo module. Lý do chủ repo đưa
-ra: sản phẩm chỉ một người dùng và sẽ không nhập dữ liệu mới trong lúc migrate, nên không
-có chuyện hai bên lệch nhau — thứ vốn là lý lẽ duy nhất chống lại việc chép gộp.
+Dữ liệu trên Supabase **chưa xoá**, cứ để tới khi app chạy ổn một thời gian.
 
-**Chép ở đâu:** trong container `storechecking-db` (ảnh `postgres:16-alpine` nên có sẵn
-`psql` và `pg_dump`, không cần Docker). Script: `tools/migrate-all-inside-db.sh`.
+**Cách đã dùng** — SSH vào NAS, script `tools/migrate-all-from-supabase.sh`. Bốn thứ vướng
+dọc đường, ghi lại vì cái nào cũng sẽ gặp lại:
 
-**Vướng cái gì:**
+1. **Supabase chạy PostgreSQL 17.6, container NAS là 16.** `pg_dump` từ chối dump server
+   mới hơn chính nó. `psql` thì không kén, nên phần đếm vẫn chạy — chỉ dump chết. Cách gỡ:
+   chạy `pg_dump` trong ảnh `postgres:17-alpine` tạm thời, rồi đổ vào psql của container 16.
+2. **`SET transaction_timeout` mới có từ PG17**, bản 16 không hiểu, nên phần mở đầu bản dump
+   làm `ON_ERROR_STOP` huỷ cả lượt. Cắt đúng dòng đó bằng `sed` là xong.
+3. **Thiếu `set -o pipefail` thì script báo OK dối.** Trạng thái của `pg_dump | psql` lấy
+   theo psql, mà psql nhận đầu vào rỗng vẫn thành công — 15 bảng báo `OK ... -> 0 dòng`
+   trong khi không chép được gì. Chỉ có bước đối chiếu số dòng ở cuối cứu được.
+4. **Không nối được Supabase bằng direct connection** (IPv6-only). Phải dùng Session pooler
+   `aws-0-ap-southeast-2` — xem mục Quy ước.
 
-1. Terminal của Container Manager quá dở: nút Create là "chạy chương trình gì" chứ không
-   phải nơi gõ lệnh, mỗi lần Create lại là một tiến trình mới nên `export` không giữ được
-   biến, và khung `bash` cuối cùng thì không gõ được. → Nên bật SSH:
-   Control Panel → Terminal & SNMP → Enable SSH service, rồi
-   `ssh <user>@192.168.1.76` và `sudo docker exec -it storechecking-db bash`.
-2. Không nối được Supabase bằng direct connection (IPv6-only). Phải dùng **Session
-   pooler** — xem mục Quy ước.
+**Bài học lớn nhất: dựng lại schema từ `supabase/*.sql` là chép tay, và chép tay thì sót.**
+`db/007` thiếu bốn thứ trong `migration-shipping-damage.sql`, đã bù bằng `db/008`:
 
-**Thông tin đã xác định, khỏi tìm lại:**
+| Sót gì | Lộ ra thế nào |
+|---|---|
+| `sales.shipping_fee` | chép dữ liệu gãy — to tiếng, dễ thấy |
+| Trigger `check_damage()` | **im lặng** — ghi hàng hư vượt tồn mà DB không chặn |
+| View `revenue` không trừ phí ship | **im lặng** — doanh thu bị thổi phồng ở mọi báo cáo |
+| View thiếu `damaged_qty` | **im lặng** — hàng đã hỏng vẫn tính là còn trên kệ |
 
-- Vùng AWS của project Supabase: **ap-southeast-2** (suy từ IPv6 `2406:da1c:16f1:f600::`
-  nằm trong `2406:da1c::/35` theo `ip-ranges.amazonaws.com`).
-- Cả `aws-0-ap-southeast-2` lẫn `aws-1-ap-southeast-2` đều có IPv4; chưa biết project nằm
-  ở cái nào, lệnh trong script thử lần lượt cả hai.
-- Mật khẩu database bắt đầu bằng `@`, trong URL phải viết `%40`.
-- `english_words` (17 dòng) và `speaking_saved` (1 dòng) **đã chép từ trước** — script tự
-  bỏ qua bảng nào đã có dữ liệu nên không sợ nhân đôi.
+Ba cái im lặng nguy hiểm hơn cái làm gãy. Chúng chỉ lộ ra vì phải đọc lại cả file khi đi
+tìm cột thứ nhất. **Trước khi viết Domain/Application cho một module, đọc lại TOÀN BỘ file
+`supabase/migration-*.sql` liên quan** — đừng chỉ grep `create table`.
+
+**Sửa file schema đã áp dụng thì API không khởi động được.** `SchemaMigrator` ghi checksum
+từng file; đổi nội dung file đã chạy là nó từ chối chạy. Sự thật mới luôn đi vào file mới.
 
 ### ✅ Sự cố API 502 — đã tìm ra nguyên nhân, 2026-08-27
 
@@ -108,14 +116,13 @@ Thứ tự: **Ghi chú → Đóng gói → Chi tiêu → Marketing → Kho hàng
 
 Mỗi module đi đúng vòng này, hết vòng mới sang module sau:
 
-1. ~~Schema~~ — XONG HẾT. `db/001`..`db/007` đã có đủ 22 bảng/view; API tự nạp lúc khởi
+1. ~~Schema~~ — XONG HẾT. `db/001`..`db/008` đã có đủ 22 bảng/view; API tự nạp lúc khởi
    động (`SchemaMigrator`), không phải làm tay trên NAS nữa.
 2. Domain → Application → Infrastructure → Api, theo bảng phân tầng ở trên.
 3. Test hợp đồng cho từng endpoint + test cách ly hai user cho từng bảng.
 4. Deploy — `.\tools\deploy.ps1`. Schema đi theo code, tự nạp.
-5. Chuyển dữ liệu **đúng lúc cắt sang**, không chuyển trước:
-   `./tools/migrate-from-supabase.sh <bảng cha trước, bảng con sau>` — chạy trên NAS,
-   cần `SUPABASE_DB_URL`. Chép theo đúng thứ tự truyền vào vì có khoá ngoại.
+5. ~~Chuyển dữ liệu~~ — XONG HẾT rồi, cả 17 bảng, 2026-08-29. Vòng lặp mỗi module giờ chỉ
+   còn: viết BE → test → deploy → Angular trỏ sang.
 6. Angular trỏ sang API mới, rồi mới xoá hàm Supabase tương ứng.
 
 ### Hai thứ phải giải TRƯỚC khi tới Marketing
