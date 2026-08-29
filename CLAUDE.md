@@ -16,7 +16,7 @@ Nền tảng đã xong, sẵn sàng rót module vào.
 | Việc | Trạng thái |
 |---|---|
 | Deploy tự động (Actions → GHCR → watchtower) | ✅ chạy thật, một lệnh `.\tools\deploy.ps1` |
-| Test hợp đồng | ✅ 118 test, chạy trên CI với Postgres thật |
+| Test hợp đồng | ✅ 123 test, chạy trên CI với Postgres thật |
 | Cổng chặn: test đỏ thì không deploy | ✅ `build` job `needs: test` |
 | Clean Architecture 4 project | ✅ commit `a83ee20` |
 | Query filter tự động theo `IOwnedByUser` | ✅ + 2 test canh gác |
@@ -115,7 +115,8 @@ Docker restart lại rơi vào đúng tình huống cũ.
 
 ### Việc tiếp theo — chuyển module
 
-Thứ tự: **Ghi chú → Đóng gói → Chi tiêu → Marketing → Kho hàng.**
+~~Thứ tự: Ghi chú → Đóng gói → Chi tiêu → Marketing → Kho hàng.~~ **BE đã xong hết**, trừ
+Marketing (ở lại Supabase). Việc còn lại là ghép Angular.
 
 Mỗi module đi đúng vòng này, hết vòng mới sang module sau:
 
@@ -128,13 +129,25 @@ Mỗi module đi đúng vòng này, hết vòng mới sang module sau:
    còn: viết BE → test → deploy → Angular trỏ sang.
 6. Angular trỏ sang API mới, rồi mới xoá hàm Supabase tương ứng.
 
-### Hai thứ phải giải TRƯỚC khi tới Marketing
+### 🔒 Marketing — QUYẾT ĐỊNH 2026-08-29: ở lại Supabase, KHÔNG chuyển
 
-- **Xác thực máy-gọi-máy.** `api/cron-post.js` trên Vercel đọc/ghi `post_queue` bằng
-  `SUPABASE_SERVICE_ROLE_KEY`. API .NET hiện chỉ nhận JWT người dùng. Cần thêm một đường
-  cho máy (API key hoặc token dịch vụ) trước khi `post_queue` rời Supabase.
-- **`post_queue.image_url`** đang trỏ tới Supabase Storage. Chủ repo sẽ **tự upload lại
-  ảnh** lên NAS, nhưng URL trong bảng vẫn phải viết lại khi chuyển.
+Cùng lý do với `orders`: có một tiến trình máy-gọi-máy phụ thuộc vào nó.
+
+`vercel.json` khai `crons: [{ path: "/api/cron-post", schedule: "0 12 * * *" }]` — 12:00
+UTC, tức **19:00 giờ Việt Nam mỗi ngày**. `api/cron-post.js` lấy món cũ nhất trong
+`post_queue`, cho AI viết caption rồi đăng lên Fanpage, đọc/ghi bằng
+`SUPABASE_SERVICE_ROLE_KEY`. Nút "Đăng ngay" trong app gọi chính endpoint đó.
+
+Chuyển `post_queue` sang NAS thì cron gãy vào 19:00 hôm sau, vì API .NET chỉ nhận JWT
+người dùng còn cron không có ai đăng nhập. Ba hướng đã cân nhắc — API key tĩnh cho máy,
+cho cron tự đăng nhập bằng tài khoản dịch vụ, hoặc để bảng lại — và chọn hướng cuối:
+**không chuyển gì trong module Marketing.**
+
+Một nhận định trong code nay đã CŨ, đừng tin lại: `marketing.component.ts` ghi *"cron chạy
+trên Vercel không vào được NAS sau Tailscale"*. Đúng lúc viết, sai từ khi bật Funnel —
+`storechecking.tail631d54.ts.net` nay là địa chỉ công khai có chứng chỉ thật. Nếu sau này
+đổi ý thì rào cản còn lại chỉ là xác thực, không phải đường mạng.
+
 
 ### Một thứ phải giải TRƯỚC khi tới Kho hàng
 
@@ -501,7 +514,7 @@ Khảo sát ngày 2026-08-27 từ `D:\Dev\StoreChecking` (repo Angular, remote
 | Ghi chú | `notes` | 4 | 🔄 API xong, Angular chưa trỏ sang |
 | Đóng gói | `packing_videos` | 7 | 🔄 API xong, Angular chưa trỏ sang |
 | Chi tiêu | `expense_categories`, `expenses`, `monthly_income`, `v_expense_month_total`, `v_expense_month_category` | 11 | 🔄 API xong, Angular chưa trỏ sang |
-| Marketing | `marketing_groups`, `marketing_posts`, `marketing_post_targets`, `post_queue` | 16 | ⬜ chưa |
+| Marketing | `marketing_groups`, `marketing_posts`, `marketing_post_targets`, `post_queue` | 16 | 🔒 **ở lại Supabase** — cron Vercel phụ thuộc |
 | Kho hàng | `batches`, `products`, `sales`, `product_damages`, `product_stock`, `batch_summary` | 20 | 🔄 API xong, Angular chưa trỏ sang |
 | Đơn hàng | `orders` | 3 | 🔒 **ở lại Supabase vĩnh viễn** |
 

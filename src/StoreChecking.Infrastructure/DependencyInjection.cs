@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using StoreChecking.Application.Abstractions;
+using StoreChecking.Application.Backup;
 using StoreChecking.Application.English;
 using StoreChecking.Application.Expenses;
 using StoreChecking.Application.Inventory;
@@ -46,6 +47,7 @@ public static class DependencyInjection
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<ISaleRepository, SaleRepository>();
         services.AddScoped<IProductDamageRepository, ProductDamageRepository>();
+        services.AddScoped<IBackupRepository, BackupRepository>();
 
         // ---------- Application services ----------
         // Registered here rather than in a separate AddApplication(): they have no
@@ -56,6 +58,7 @@ public static class DependencyInjection
         services.AddScoped<PackingService>();
         services.AddScoped<ExpensesService>();
         services.AddScoped<InventoryService>();
+        services.AddScoped<BackupService>();
 
         return services;
     }

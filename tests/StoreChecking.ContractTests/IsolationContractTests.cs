@@ -312,6 +312,41 @@ public sealed class IsolationContractTests(ApiFactory api)
         Assert.Equal(JsonValueKind.Null, mine[0].GetProperty("priority").ValueKind);
     }
 
+    // The backup endpoint is the ONE place that reads with raw SQL instead of going through
+    // EF's owner filter — a backup has to contain every column, and listing them by hand is
+    // how columns quietly go missing. It writes its own `where user_id`, so this test is the
+    // only thing standing between that hand-written clause and somebody else's whole
+    // database arriving in a backup file.
+    [DbFact]
+    public async Task Sao_luu_chi_lay_du_lieu_cua_chinh_minh()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        await a.PostJson("/api/inventory/batches", new
+        {
+            name = "Lô của A", importDate = "2026-08-01", totalCost = 1_000m, note = (string?)null,
+            products = new[] { new { name = "SP của A", quantity = 5, sellPrice = 100m } },
+        });
+        await a.PostJson("/api/expenses/categories", new { name = "Danh mục của A", type = "variable" });
+        await a.PostJson("/api/packing", new { orderCode = "DON-CUA-A", ext = "mp4" });
+
+        // A's backup has A's rows.
+        var mine = await Json.Read(await a.GetAsync("/api/backup"));
+        Assert.Equal(1, mine.GetProperty("counts").GetProperty("batches").GetInt32());
+        Assert.Equal(1, mine.GetProperty("counts").GetProperty("products").GetInt32());
+        Assert.Equal(1, mine.GetProperty("counts").GetProperty("expense_categories").GetInt32());
+        Assert.Equal(1, mine.GetProperty("counts").GetProperty("packing_videos").GetInt32());
+
+        // B's backup is empty — every table, not just the ones checked above.
+        var theirs = await Json.Read(await b.GetAsync("/api/backup"));
+        foreach (var t in theirs.GetProperty("counts").EnumerateObject())
+            Assert.True(t.Value.GetInt32() == 0, $"Bảng '{t.Name}' lọt dữ liệu của người khác vào bản sao lưu.");
+
+        foreach (var t in theirs.GetProperty("tables").EnumerateObject())
+            Assert.Equal(0, t.Value.GetArrayLength());
+    }
+
     [DbFact]
     public async Task Luu_trung_cau_chi_tinh_trong_pham_vi_mot_nguoi()
     {
