@@ -16,13 +16,14 @@ Nền tảng đã xong, sẵn sàng rót module vào.
 | Việc | Trạng thái |
 |---|---|
 | Deploy tự động (Actions → GHCR → watchtower) | ✅ chạy thật, một lệnh `.\tools\deploy.ps1` |
-| Test hợp đồng | ✅ 44 test, chạy trên CI với Postgres thật |
+| Test hợp đồng | ✅ 62 test, chạy trên CI với Postgres thật |
 | Cổng chặn: test đỏ thì không deploy | ✅ `build` job `needs: test` |
 | Clean Architecture 4 project | ✅ commit `a83ee20` |
 | Query filter tự động theo `IOwnedByUser` | ✅ + 2 test canh gác |
 | Schema toàn bộ 22 bảng/view | ✅ `db/001`–`008`, API tự nạp lúc khởi động |
 | **Chuyển dữ liệu 17 bảng** | ✅ xong 2026-08-29, số dòng khớp cả hai bên |
 | **Module Ghi chú** | 🔄 backend xong, chờ Angular trỏ sang |
+| **Module Đóng gói** | 🔄 backend xong, chờ Angular trỏ sang |
 
 ### ✅ Chuyển dữ liệu — XONG 2026-08-29
 
@@ -496,7 +497,7 @@ Khảo sát ngày 2026-08-27 từ `D:\Dev\StoreChecking` (repo Angular, remote
 | Lịch làm | `work_days`, `work_month_notes` | 5 | ✅ có API, Angular chưa trỏ sang |
 | Tiếng Anh | `english_words`, `speaking_saved` | 6 | ✅ xong |
 | Ghi chú | `notes` | 4 | 🔄 API xong, Angular chưa trỏ sang |
-| Đóng gói | `packing_videos` | 7 | ⬜ chưa |
+| Đóng gói | `packing_videos` | 7 | 🔄 API xong, Angular chưa trỏ sang |
 | Chi tiêu | `expense_categories`, `expenses`, `monthly_income`, `v_expense_month_total`, `v_expense_month_category` | 11 | ⬜ chưa |
 | Marketing | `marketing_groups`, `marketing_posts`, `marketing_post_targets`, `post_queue` | 16 | ⬜ chưa |
 | Kho hàng | `batches`, `products`, `sales`, `product_damages`, `product_stock`, `batch_summary` | 20 | ⬜ chưa |

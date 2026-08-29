@@ -112,6 +112,40 @@ public sealed class IsolationContractTests(ApiFactory api)
     }
 
     [DbFact]
+    public async Task Nhat_ky_dong_goi_cua_nguoi_khac_khong_doc_hay_xoa_duoc()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        await a.PostJson("/api/packing", new { orderCode = "RIENG-CUA-A", ext = "mp4" });
+
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/packing"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/packing?search=RIENG"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/packing/filenames"))).GetArrayLength());
+
+        var mine = await Json.Read(await a.GetAsync("/api/packing"));
+        var id = mine[0].GetProperty("id").GetGuid();
+        Assert.Equal(HttpStatusCode.NotFound, (await b.DeleteAsync($"/api/packing/{id}")).StatusCode);
+
+        Assert.Equal(1, (await Json.Read(await a.GetAsync("/api/packing"))).GetArrayLength());
+    }
+
+    // Seq is worked out per owner. Two people filming the same order code must not have
+    // their file names collide on the NAS... and must not see each other's count either.
+    [DbFact]
+    public async Task Seq_dong_goi_tinh_rieng_cho_tung_nguoi()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        await a.PostJson("/api/packing", new { orderCode = "CHUNG-MA", ext = "mp4" });
+        await a.PostJson("/api/packing", new { orderCode = "CHUNG-MA", ext = "mp4" });
+
+        var theirs = await Json.Read(await b.PostJson("/api/packing", new { orderCode = "CHUNG-MA", ext = "mp4" }));
+        Assert.Equal(1, theirs.GetProperty("seq").GetInt32());
+    }
+
+    [DbFact]
     public async Task Luu_trung_cau_chi_tinh_trong_pham_vi_mot_nguoi()
     {
         var a = api.ClientFor(Guid.NewGuid());
