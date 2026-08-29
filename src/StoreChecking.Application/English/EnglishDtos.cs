@@ -9,7 +9,12 @@ public record EnglishWordDto(Guid Id, string Word, JsonElement Data, DateTimeOff
 public record SaveEnglishWordRequest(string Word, JsonElement Data);
 
 /// <summary>A sentence kept from speaking practice, as returned to the client.</summary>
-public record SavedSentenceDto(Guid Id, string Text, string Note, DateTimeOffset CreatedAt);
+public record SavedSentenceDto(
+    Guid Id, string Text, string Note, string Context, DateTimeOffset CreatedAt);
 
-/// <summary>Keep one sentence from a speaking session.</summary>
-public record SaveSentenceRequest(string Text, string? Note);
+/// <summary>
+/// Keep one sentence from a speaking session.
+/// <para><c>Context</c> is the line before it in the conversation — the question an answer
+/// answers. Reviewing a saved answer without it is guesswork.</para>
+/// </summary>
+public record SaveSentenceRequest(string Text, string? Note, string? Context);

@@ -119,14 +119,19 @@ public sealed class EnglishContractTests(ApiFactory api)
     {
         var c = NewUser();
 
-        var created = await c.PostJson("/api/english/sentences",
-            new { text = "  I used to walk there.  ", note = " cach noi tu nhien hon " });
+        var created = await c.PostJson("/api/english/sentences", new
+        {
+            text = "  I used to walk there.  ",
+            note = " cach noi tu nhien hon ",
+            context = "  How did you get to school?  ",
+        });
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
 
         var s = await Json.Read(created);
-        Json.HasExactly(s, "id", "text", "note", "createdAt");
+        Json.HasExactly(s, "id", "text", "note", "context", "createdAt");
         Assert.Equal("I used to walk there.", s.GetProperty("text").GetString());
         Assert.Equal("cach noi tu nhien hon", s.GetProperty("note").GetString());
+        Assert.Equal("How did you get to school?", s.GetProperty("context").GetString());
 
         var listed = await Json.Read(await c.GetAsync("/api/english/sentences"));
         Json.HasExactly(listed, "total", "limit", "offset", "items");
@@ -137,10 +142,38 @@ public sealed class EnglishContractTests(ApiFactory api)
     public async Task Luu_khong_co_note_thi_note_la_chuoi_rong_chu_khong_null()
     {
         var c = NewUser();
-        var s = await Json.Read(await c.PostJson("/api/english/sentences", new { text = "No note here.", note = (string?)null }));
+        var s = await Json.Read(await c.PostJson("/api/english/sentences",
+            new { text = "No note here.", note = (string?)null, context = (string?)null }));
 
         Assert.Equal(JsonValueKind.String, s.GetProperty("note").ValueKind);
         Assert.Equal("", s.GetProperty("note").GetString());
+
+        // Câu mở đầu cuộc trò chuyện thì không có câu nào trước nó — chuỗi rỗng, không null,
+        // để phía giao diện chỉ phải xử một hình dạng.
+        Assert.Equal(JsonValueKind.String, s.GetProperty("context").ValueKind);
+        Assert.Equal("", s.GetProperty("context").GetString());
+    }
+
+    // Câu đã lưu mà không có câu hỏi đi kèm thì vài tuần sau đọc lại không hiểu gì:
+    // "Yes, for about three years" tự nó không nói lên điều gì cả.
+    [DbFact]
+    public async Task Cau_da_luu_giu_lai_cau_dung_truoc_no()
+    {
+        var c = NewUser();
+
+        await c.PostJson("/api/english/sentences", new
+        {
+            text = "Yes, for about three years.",
+            note = "Câu trả lời mẫu",
+            context = "Have you worked with .NET before?",
+        });
+
+        var items = (await Json.Read(await c.GetAsync("/api/english/sentences")))
+            .GetProperty("items");
+
+        Assert.Equal(1, items.GetArrayLength());
+        Assert.Equal("Have you worked with .NET before?",
+            items[0].GetProperty("context").GetString());
     }
 
     // The client shows a bookmark toggle, so a double tap must not create a second row.

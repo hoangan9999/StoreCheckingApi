@@ -24,7 +24,8 @@ public sealed class EnglishService(
     // whole life. Ordinary object construction, outside any IQueryable, is always safe.
     private static EnglishWordDto ToDto(EnglishWord r) => new(r.Id, r.Word, r.Data.RootElement, r.CreatedAt);
 
-    private static SavedSentenceDto ToDto(SavedSentence r) => new(r.Id, r.Text, r.Note, r.CreatedAt);
+    private static SavedSentenceDto ToDto(SavedSentence r) =>
+        new(r.Id, r.Text, r.Note, r.Context, r.CreatedAt);
 
     // ---------- Saved vocabulary ----------
 
@@ -105,6 +106,7 @@ public sealed class EnglishService(
             UserId = user.Id,
             Text = text,
             Note = (body.Note ?? "").Trim(),
+            Context = (body.Context ?? "").Trim(),
         };
         sentences.Add(row);
         await uow.SaveChangesAsync(ct);

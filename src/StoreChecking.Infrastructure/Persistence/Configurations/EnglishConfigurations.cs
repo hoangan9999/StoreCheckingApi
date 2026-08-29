@@ -29,6 +29,7 @@ public sealed class SavedSentenceConfiguration : IEntityTypeConfiguration<SavedS
         e.Property(x => x.UserId).HasColumnName("user_id");
         e.Property(x => x.Text).HasColumnName("text");
         e.Property(x => x.Note).HasColumnName("note").HasDefaultValue("");
+        e.Property(x => x.Context).HasColumnName("context").HasDefaultValue("");
         e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         e.HasIndex(x => new { x.UserId, x.CreatedAt });
     }

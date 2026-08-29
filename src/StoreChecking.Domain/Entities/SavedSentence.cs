@@ -17,5 +17,13 @@ public class SavedSentence : IOwnedByUser
     /// <summary>Where the sentence came from — "câu trả lời mẫu", "cách nói tự nhiên hơn"…</summary>
     public string Note { get; set; } = "";
 
+    /// <summary>
+    /// The line that came before this one in the conversation, usually the question it
+    /// answers. Empty when there was none, or for rows saved before this was kept.
+    /// <para>Without it a saved answer is unreadable weeks later: "Yes, for about three
+    /// years" means nothing on its own.</para>
+    /// </summary>
+    public string Context { get; set; } = "";
+
     public DateTimeOffset CreatedAt { get; set; }
 }
