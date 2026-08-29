@@ -146,6 +146,74 @@ public sealed class IsolationContractTests(ApiFactory api)
     }
 
     [DbFact]
+    public async Task Chi_tieu_cua_nguoi_khac_khong_doc_sua_hay_xoa_duoc()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        var cat = (await Json.Read(await a.PostJson("/api/expenses/categories",
+            new { name = "Của A", type = "variable" }))).GetProperty("id").GetGuid();
+        var spend = (await Json.Read(await a.PostJson("/api/expenses",
+            new { categoryId = cat, spentOn = "2026-08-15", description = "bí mật", amount = 500m, note = (string?)null })))
+            .GetProperty("id").GetGuid();
+        await a.PutJson("/api/expenses/income", new { year = 2026, month = 8, income = 9_000m, note = (string?)null });
+
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/expenses/categories"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/expenses?year=2026&month=8"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/expenses/income?year=2026"))).GetArrayLength());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await b.DeleteAsync($"/api/expenses/categories/{cat}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await b.DeleteAsync($"/api/expenses/{spend}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await b.PutJson($"/api/expenses/{spend}",
+            new { categoryId = cat, spentOn = "2026-08-16", description = "B sửa trộm", amount = 1m, note = (string?)null })).StatusCode);
+
+        // A's own data untouched.
+        Assert.Equal(1, (await Json.Read(await a.GetAsync("/api/expenses?year=2026&month=8"))).GetArrayLength());
+    }
+
+    // Views need the owner filter as much as tables do, and it is easier to forget there:
+    // there is no key, nothing is ever written, and a leak would look like a rounding
+    // error in someone else's chart rather than like a security hole.
+    [DbFact]
+    public async Task Hai_view_tong_hop_cung_bi_loc_theo_chu_so_huu()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        var cat = (await Json.Read(await a.PostJson("/api/expenses/categories",
+            new { name = "Của A", type = "variable" }))).GetProperty("id").GetGuid();
+        await a.PostJson("/api/expenses",
+            new { categoryId = cat, spentOn = "2026-08-15", description = (string?)null, amount = 777m, note = (string?)null });
+
+        // A sees the roll-up…
+        var mineByCat = await Json.Read(await a.GetAsync("/api/expenses/summary/categories?year=2026&month=8"));
+        Assert.Equal(1, mineByCat.GetArrayLength());
+        Assert.Equal(777m, mineByCat[0].GetProperty("spent").GetDecimal());
+
+        // …and B sees nothing at all, in either view.
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/expenses/summary/categories?year=2026&month=8"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/expenses/summary/months?year=2026"))).GetArrayLength());
+    }
+
+    // Pointing an expense at someone else's category must fail as "not found", not succeed:
+    // succeeding would both corrupt their totals and confirm that the category exists.
+    [DbFact]
+    public async Task Khong_the_gan_giao_dich_vao_danh_muc_cua_nguoi_khac()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        var cat = (await Json.Read(await a.PostJson("/api/expenses/categories",
+            new { name = "Của A", type = "variable" }))).GetProperty("id").GetGuid();
+
+        var res = await b.PostJson("/api/expenses",
+            new { categoryId = cat, spentOn = "2026-08-15", description = (string?)null, amount = 1m, note = (string?)null });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Equal("Danh mục không tồn tại.", (await Json.Read(res)).GetProperty("error").GetString());
+    }
+
+    [DbFact]
     public async Task Luu_trung_cau_chi_tinh_trong_pham_vi_mot_nguoi()
     {
         var a = api.ClientFor(Guid.NewGuid());

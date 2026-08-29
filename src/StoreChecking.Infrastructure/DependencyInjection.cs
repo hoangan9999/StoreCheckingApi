@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using StoreChecking.Application.Abstractions;
 using StoreChecking.Application.English;
+using StoreChecking.Application.Expenses;
 using StoreChecking.Application.Notes;
 using StoreChecking.Application.Packing;
 using StoreChecking.Application.WorkCalendar;
@@ -36,6 +37,10 @@ public static class DependencyInjection
         services.AddScoped<ISavedSentenceRepository, SavedSentenceRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IPackingVideoRepository, PackingVideoRepository>();
+        services.AddScoped<IExpenseCategoryRepository, ExpenseCategoryRepository>();
+        services.AddScoped<IExpenseRepository, ExpenseRepository>();
+        services.AddScoped<IMonthlyIncomeRepository, MonthlyIncomeRepository>();
+        services.AddScoped<IExpenseSummaryRepository, ExpenseSummaryRepository>();
 
         // ---------- Application services ----------
         // Registered here rather than in a separate AddApplication(): they have no
@@ -44,6 +49,7 @@ public static class DependencyInjection
         services.AddScoped<EnglishService>();
         services.AddScoped<NotesService>();
         services.AddScoped<PackingService>();
+        services.AddScoped<ExpensesService>();
 
         return services;
     }

@@ -16,6 +16,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser u
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<PackingVideo> PackingVideos => Set<PackingVideo>();
 
+    public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
+    public DbSet<Expense> Expenses => Set<Expense>();
+    public DbSet<MonthlyIncome> MonthlyIncomes => Set<MonthlyIncome>();
+
+    // Read-only roll-ups. Keyless, mapped to views — see ExpenseConfigurations.
+    public DbSet<MonthCategorySpend> MonthCategorySpends => Set<MonthCategorySpend>();
+    public DbSet<MonthTotal> MonthTotals => Set<MonthTotal>();
+
     /// <summary>
     /// Read by the generated query filters, once per query.
     /// <para>Must be a member of the context, not a captured value: the EF model is built
