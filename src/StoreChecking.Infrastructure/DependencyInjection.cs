@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using StoreChecking.Application.Abstractions;
 using StoreChecking.Application.English;
 using StoreChecking.Application.Expenses;
+using StoreChecking.Application.Inventory;
 using StoreChecking.Application.Notes;
 using StoreChecking.Application.Packing;
 using StoreChecking.Application.WorkCalendar;
@@ -41,6 +42,10 @@ public static class DependencyInjection
         services.AddScoped<IExpenseRepository, ExpenseRepository>();
         services.AddScoped<IMonthlyIncomeRepository, MonthlyIncomeRepository>();
         services.AddScoped<IExpenseSummaryRepository, ExpenseSummaryRepository>();
+        services.AddScoped<IBatchRepository, BatchRepository>();
+        services.AddScoped<IProductRepository, ProductRepository>();
+        services.AddScoped<ISaleRepository, SaleRepository>();
+        services.AddScoped<IProductDamageRepository, ProductDamageRepository>();
 
         // ---------- Application services ----------
         // Registered here rather than in a separate AddApplication(): they have no
@@ -50,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<NotesService>();
         services.AddScoped<PackingService>();
         services.AddScoped<ExpensesService>();
+        services.AddScoped<InventoryService>();
 
         return services;
     }

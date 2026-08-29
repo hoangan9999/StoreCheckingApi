@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 
 namespace StoreChecking.ContractTests;
 
@@ -211,6 +212,104 @@ public sealed class IsolationContractTests(ApiFactory api)
 
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         Assert.Equal("Danh mục không tồn tại.", (await Json.Read(res)).GetProperty("error").GetString());
+    }
+
+    // The inventory is the most valuable data in the application, and it spans four tables
+    // plus two views. Everything here has to be invisible to anyone else.
+    [DbFact]
+    public async Task Kho_hang_cua_nguoi_khac_khong_doc_duoc_o_bat_ky_dau()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        var batch = (await Json.Read(await a.PostJson("/api/inventory/batches", new
+        {
+            name = "Lô của A", importDate = "2026-08-01", totalCost = 500m, note = (string?)null,
+            products = new[] { new { name = "SP của A", quantity = 10, sellPrice = 100m } },
+        }))).GetProperty("id").GetGuid();
+
+        var product = (await Json.Read(await a.GetAsync($"/api/inventory/batches/{batch}/products")))[0]
+            .GetProperty("id").GetGuid();
+
+        await a.PostJson("/api/inventory/sales", new
+        {
+            items = new[] { new { productId = product, quantity = 2, sellPrice = 100m } },
+            soldAt = "2026-08-15T10:00:00Z", shippingFee = 0m, note = (string?)null,
+        });
+        await a.PostJson("/api/inventory/damages", new { productId = product, quantity = 1, note = (string?)null });
+
+        // Tables and both views: B sees nothing at all.
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/inventory/batches"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/inventory/stock"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/inventory/sales"))).GetArrayLength());
+
+        // Nor by knowing the ids.
+        Assert.Equal(HttpStatusCode.NotFound, (await b.GetAsync($"/api/inventory/batches/{batch}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await b.GetAsync($"/api/inventory/batches/{batch}/products")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await b.GetAsync($"/api/inventory/batches/{batch}/sales")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await b.DeleteAsync($"/api/inventory/batches/{batch}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await b.DeleteAsync($"/api/inventory/products/{product}")).StatusCode);
+
+        // A's batch is untouched.
+        Assert.Equal(1, (await Json.Read(await a.GetAsync("/api/inventory/batches"))).GetArrayLength());
+    }
+
+    // Selling someone else's stock would both steal from their figures and confirm that the
+    // product exists. It has to read as "not there", not as a permission error.
+    [DbFact]
+    public async Task Khong_the_ban_hoac_ghi_hu_san_pham_cua_nguoi_khac()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        var batch = (await Json.Read(await a.PostJson("/api/inventory/batches", new
+        {
+            name = "Lô của A", importDate = "2026-08-01", totalCost = 0m, note = (string?)null,
+            products = new[] { new { name = "SP của A", quantity = 10, sellPrice = 100m } },
+        }))).GetProperty("id").GetGuid();
+
+        var product = (await Json.Read(await a.GetAsync($"/api/inventory/batches/{batch}/products")))[0]
+            .GetProperty("id").GetGuid();
+
+        var sell = await b.PostJson("/api/inventory/sales", new
+        {
+            items = new[] { new { productId = product, quantity = 1, sellPrice = 100m } },
+            soldAt = "2026-08-15T10:00:00Z", shippingFee = 0m, note = (string?)null,
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, sell.StatusCode);
+        Assert.Equal("Sản phẩm không tồn tại.", (await Json.Read(sell)).GetProperty("error").GetString());
+
+        var damage = await b.PostJson("/api/inventory/damages", new { productId = product, quantity = 1, note = (string?)null });
+        Assert.Equal(HttpStatusCode.BadRequest, damage.StatusCode);
+        Assert.Equal("Sản phẩm không tồn tại.", (await Json.Read(damage)).GetProperty("error").GetString());
+
+        // A's stock is exactly as it was.
+        var stock = await Json.Read(await a.GetAsync("/api/inventory/stock"));
+        Assert.Equal(10, stock[0].GetProperty("remaining").GetInt64());
+    }
+
+    // Reordering takes a list of ids. Ids belonging to someone else must be ignored rather
+    // than applied — silently, since reporting them would confirm they exist.
+    [DbFact]
+    public async Task Dat_uu_tien_bo_qua_lo_khong_phai_cua_minh()
+    {
+        var a = api.ClientFor(Guid.NewGuid());
+        var b = api.ClientFor(Guid.NewGuid());
+
+        var theirs = (await Json.Read(await a.PostJson("/api/inventory/batches", new
+        {
+            name = "Lô của A", importDate = "2026-08-01", totalCost = 0m,
+            note = (string?)null, products = Array.Empty<object>(),
+        }))).GetProperty("id").GetGuid();
+
+        var res = await b.PutJson("/api/inventory/batches/priorities",
+            new { items = new[] { new { id = theirs, priority = 1 } } });
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal(0, (await Json.Read(res)).GetProperty("changed").GetInt32());
+
+        var mine = await Json.Read(await a.GetAsync("/api/inventory/batches"));
+        Assert.Equal(JsonValueKind.Null, mine[0].GetProperty("priority").ValueKind);
     }
 
     [DbFact]

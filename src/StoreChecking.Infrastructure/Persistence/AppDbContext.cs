@@ -24,6 +24,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser u
     public DbSet<MonthCategorySpend> MonthCategorySpends => Set<MonthCategorySpend>();
     public DbSet<MonthTotal> MonthTotals => Set<MonthTotal>();
 
+    public DbSet<Batch> Batches => Set<Batch>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Sale> Sales => Set<Sale>();
+    public DbSet<ProductDamage> ProductDamages => Set<ProductDamage>();
+
+    public DbSet<ProductStock> ProductStocks => Set<ProductStock>();
+    public DbSet<BatchSummary> BatchSummaries => Set<BatchSummary>();
+
     /// <summary>
     /// Read by the generated query filters, once per query.
     /// <para>Must be a member of the context, not a captured value: the EF model is built
