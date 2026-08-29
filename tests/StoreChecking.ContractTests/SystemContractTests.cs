@@ -15,10 +15,16 @@ public sealed class SystemContractTests(ApiFactory api)
 
         // tools/deploy.ps1 waits for `version` to match the commit it just pushed. Rename
         // or drop it and every deploy silently times out instead of reporting success.
-        Json.HasExactly(body, "ok", "db", "version");
+        Json.HasExactly(body, "ok", "db", "version", "dbMs", "idleSec");
         Assert.True(body.GetProperty("ok").GetBoolean());
         Assert.True(body.GetProperty("db").GetBoolean());
         Assert.False(string.IsNullOrWhiteSpace(body.GetProperty("version").GetString()));
+
+        // dbMs và idleSec là để chẩn đoán những lần chậm sau khi app nghỉ lâu: dbMs gần
+        // bằng tổng thời gian phản hồi thì nút thắt ở database, còn nhỏ mà vẫn chậm thì
+        // nút thắt nằm chỗ khác. Vô nghĩa nếu thiếu, nên khoá lại ở đây.
+        Assert.True(body.GetProperty("dbMs").GetInt64() >= 0);
+        Assert.True(body.GetProperty("idleSec").GetInt32() >= 0);
     }
 
     [DbFact]

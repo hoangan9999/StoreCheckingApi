@@ -22,13 +22,26 @@ namespace StoreChecking.Infrastructure;
 /// </summary>
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString)
+    /// <param name="warmupInterval">
+    /// How often to touch the database so nobody's first request has to. Zero turns it off.
+    /// </param>
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services, string connectionString, TimeSpan warmupInterval)
     {
+        // Pool settings applied before anything else sees the string, so the migrator and
+        // the DbContext agree on how connections are kept.
+        connectionString = ConnectionTuning.WithWarmPool(connectionString);
+
         services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connectionString));
 
         // Applies db/*.sql at startup. Registered here so Program.cs only has to ask for it.
         services.AddSingleton(sp => new SchemaMigrator(
             connectionString, sp.GetRequiredService<ILogger<SchemaMigrator>>()));
+
+        services.AddHostedService(sp => new DatabaseWarmupService(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<DatabaseWarmupService>>(),
+            warmupInterval));
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IDatabaseHealth, DatabaseHealth>();
 

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using StoreChecking.Api;
 using StoreChecking.Api.Auth;
 using StoreChecking.Application.Abstractions;
 using StoreChecking.Application.Common;
@@ -51,7 +52,13 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 
 // Repositories, unit of work and the application services all come from one place.
-builder.Services.AddInfrastructure(connString);
+// Khoảng cách giữa hai lần hâm nóng database. Đặt Warmup:IntervalSeconds = 0 để tắt.
+// Bốn phút: ngắn hơn mọi ngưỡng nghỉ đã biết có thể làm nguội đường đi, và nhẹ tới mức
+// không đáng kể — mỗi lượt là một câu đếm trên bảng vài dòng.
+var warmupSeconds = builder.Configuration.GetValue<int?>("Warmup:IntervalSeconds") ?? 240;
+
+builder.Services.AddInfrastructure(connString, TimeSpan.FromSeconds(Math.Max(warmupSeconds, 0)));
+builder.Services.AddSingleton<LastRequestClock>();
 
 builder.Services.AddControllers();
 
@@ -210,6 +217,15 @@ if (swaggerEnabled)
         c.DocumentTitle = "StoreChecking API";
     });
 }
+
+// Ghi lại thời điểm có request, để /health nói được nó đã nghỉ bao lâu trước lượt này.
+// Đặt sớm nhất có thể, trước cả CORS, để đếm cả những request bị chặn giữa chừng.
+app.Use(async (ctx, next) =>
+{
+    ctx.Items[LastRequestClock.ItemKey] = ctx.RequestServices
+        .GetRequiredService<LastRequestClock>().Mark();
+    await next();
+});
 
 app.UseCors();
 
