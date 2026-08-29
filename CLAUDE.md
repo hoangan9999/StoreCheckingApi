@@ -1,31 +1,79 @@
 # Migrate từ Supabase sang .NET — sổ theo dõi
 
-File này ghi lại tiến độ chuyển backend từ **Supabase** sang **.NET 9 + PostgreSQL tự dựng
-trên NAS**. Xong giai đoạn nào thì tick giai đoạn đó.
+Chuyển backend từ **Supabase** sang **.NET 9 + PostgreSQL tự dựng trên NAS**.
 
-Repo Angular: `D:\Dev\StoreChecking` (remote `hoangan9999/InventoryAndTrackingProfit`).
-Phần Tiếng Anh đã trỏ sang API này; phần còn lại vẫn gọi Supabase.
-Repo này: backend mới, deploy riêng.
+**Hai repo, phải có cả hai mới làm việc được:**
+
+| | Đường dẫn cũ | Remote |
+|---|---|---|
+| Backend (repo này) | `D:\Dev\StoreCheckingApi\StoreCheckingApi` | `hoangan9999/StoreCheckingApi` |
+| Angular | `D:\Dev\StoreChecking` | `hoangan9999/InventoryAndTrackingProfit` |
 
 ---
 
 ## 📌 ĐANG Ở ĐÂU — cập nhật 2026-08-29
 
-Nền tảng đã xong, sẵn sàng rót module vào.
+**Cuộc migrate đã XONG.** Backend, dữ liệu, Angular đều đã cắt sang; code Supabase cũ đã
+gỡ. Không còn việc dở dang nào, chỉ còn mấy thứ dọn dẹp ở cuối mục này.
 
 | Việc | Trạng thái |
 |---|---|
-| Deploy tự động (Actions → GHCR → watchtower) | ✅ chạy thật, một lệnh `.\tools\deploy.ps1` |
+| Deploy tự động (Actions → GHCR → watchtower) | ✅ một lệnh `.\tools\deploy.ps1` |
 | Test hợp đồng | ✅ 123 test, chạy trên CI với Postgres thật |
 | Cổng chặn: test đỏ thì không deploy | ✅ `build` job `needs: test` |
-| Clean Architecture 4 project | ✅ commit `a83ee20` |
+| Clean Architecture 4 project | ✅ `a83ee20` |
 | Query filter tự động theo `IOwnedByUser` | ✅ + 2 test canh gác |
-| Schema toàn bộ 22 bảng/view | ✅ `db/001`–`008`, API tự nạp lúc khởi động |
-| **Chuyển dữ liệu 17 bảng** | ✅ xong 2026-08-29, số dòng khớp cả hai bên |
-| **Module Ghi chú** | 🔄 backend xong, chờ Angular trỏ sang |
-| **Module Đóng gói** | 🔄 backend xong, chờ Angular trỏ sang |
-| **Module Chi tiêu** | 🔄 backend xong, chờ Angular trỏ sang |
-| **Module Kho hàng** | 🔄 backend xong, chờ Angular trỏ sang |
+| Schema 22 bảng/view | ✅ `db/001`–`008`, API tự nạp lúc khởi động |
+| Chuyển dữ liệu 17 bảng | ✅ 2026-08-29, ~474 dòng, khớp hai bên |
+| BE: Lịch làm, Tiếng Anh, Ghi chú, Đóng gói, Chi tiêu, Kho hàng, Sao lưu | ✅ 56 endpoint |
+| Angular trỏ sang API mới | ✅ `d76100e`, chủ repo đã test tay hết |
+| Gỡ 57 hàm Supabase cũ | ✅ `supabase.service.ts` 851 → 262 dòng |
+
+### Cái gì chạy ở đâu, sau khi xong
+
+| Ở NAS (.NET + Postgres) | Ở lại Supabase |
+|---|---|
+| Lịch làm, Tiếng Anh, Ghi chú, Đóng gói, Chi tiêu, Kho hàng, Sao lưu | Đăng nhập (3 hàm), Marketing (17), Đơn hàng (3) |
+
+Ba nhóm ở lại đều có lý do riêng, ghi ngay trên đầu class `SupabaseService` bên repo
+Angular. Tóm tắt: Supabase vẫn là **nơi cấp danh tính** (API .NET xác thực chính token đó,
+không có tài khoản riêng); Marketing có **cron Vercel 19:00** không ai đăng nhập; `/order`
+là **trang công khai** khách quét QR, phải sống kể cả khi nhà mất điện.
+
+### Phía Angular tổ chức thế nào
+
+Mỗi module một service trong `src/app/core/`, tên `*-api.service.ts`, tất cả dùng chung
+`api-client.service.ts` (token, timeout 30s, trạng thái kết nối, `CachedList`).
+
+`work-calendar-api` · `english-api` · `notes-api` · `packing-api` · `expenses-api` ·
+`inventory-api` · `backup-api`
+
+Chữ ký hàm giữ y nguyên bản Supabase cũ, nên component chỉ đổi chỗ `inject`. Mỗi service
+có lớp mapper riêng vì API trả **camelCase** còn model Angular dùng **snake_case**.
+
+Một chỗ cố ý không dùng thứ tự của server: `getAllStock` sắp lại ở client bằng
+`localeCompare`, vì API bật `InvariantGlobalization` nên không biết cách sắp chữ tiếng Việt.
+
+### Việc còn nợ
+
+- [ ] **Đổi 4 thứ đã lộ trong lịch sử chat** — nên làm sớm:
+      token GHCR (đang có quyền `repo` cho MỌI repo riêng tư, chỉ cần `read:packages`),
+      mật khẩu database Supabase, mật khẩu Postgres trên NAS (`DB_PASSWORD` trong `.env`),
+      và `TS_AUTHKEY`.
+- [ ] **Xoá dữ liệu cũ trên Supabase** — vẫn còn nguyên, cố ý. Chỉ xoá khi đã yên tâm hẳn.
+- [ ] **Sao lưu không có 5 bảng**: `notes`, `work_days`, `work_month_notes`,
+      `english_words`, `speaking_saved` chưa từng nằm trong bản sao lưu, kể cả thời
+      Supabase. Thêm vào là đổi nội dung file — cần quyết định riêng.
+- [ ] **Code chết bên Angular**: `updateQueueItem`, `listPostTargets`, `setPosted` trong
+      `supabase.service.ts` không còn ai gọi. Thuộc Marketing nên chưa gỡ.
+
+### Chưa bao giờ kiểm chứng
+
+Toàn bộ 123 test chạy trên CI với Postgres thật, nhưng **máy dev không có Postgres cũng
+không có Docker** (máy công ty). Nên `dotnet test` ở máy sẽ báo **skip hết** — đó là bình
+thường, không phải hỏng. Muốn chạy thật thì đặt biến `TEST_POSTGRES` trỏ tới một Postgres
+bất kỳ.
+
 
 ### ✅ Chuyển dữ liệu — XONG 2026-08-29
 
@@ -113,21 +161,20 @@ Docker restart lại rơi vào đúng tình huống cũ.
 - `SchemaMigrator` không sai ở phần chạy SQL: log CI của `1909a50` cho thấy nó nạp trót
   lọt cả 7 file, kể cả `007-inventory.sql` với hàm plpgsql dấu `$$`, rồi 44 test xanh.
 
-### Việc tiếp theo — chuyển module
+### Vòng lặp mỗi module — giữ lại làm mẫu
 
-~~Thứ tự: Ghi chú → Đóng gói → Chi tiêu → Marketing → Kho hàng.~~ **BE đã xong hết**, trừ
-Marketing (ở lại Supabase). Việc còn lại là ghép Angular.
+Cả sáu module đã đi qua đúng vòng này. Ghi lại vì nếu sau này thêm module mới thì làm y vậy:
 
-Mỗi module đi đúng vòng này, hết vòng mới sang module sau:
-
-1. ~~Schema~~ — XONG HẾT. `db/001`..`db/008` đã có đủ 22 bảng/view; API tự nạp lúc khởi
-   động (`SchemaMigrator`), không phải làm tay trên NAS nữa.
-2. Domain → Application → Infrastructure → Api, theo bảng phân tầng ở trên.
-3. Test hợp đồng cho từng endpoint + test cách ly hai user cho từng bảng.
-4. Deploy — `.\tools\deploy.ps1`. Schema đi theo code, tự nạp.
-5. ~~Chuyển dữ liệu~~ — XONG HẾT rồi, cả 17 bảng, 2026-08-29. Vòng lặp mỗi module giờ chỉ
-   còn: viết BE → test → deploy → Angular trỏ sang.
-6. Angular trỏ sang API mới, rồi mới xoá hàm Supabase tương ứng.
+1. **Đọc TRỌN file `supabase/migration-*.sql` liên quan**, không grep `create table` rồi
+   thôi. Đây là bài học đắt nhất của cả cuộc migrate — xem mục Chuyển dữ liệu.
+2. Đọc trọn phần hàm tương ứng trong `supabase.service.ts` **và** cách component gọi nó.
+   Hàm nào không còn ai gọi thì đừng viết endpoint cho nó.
+3. Schema: file mới `db/00N-*.sql`, **không sửa file đã áp dụng**.
+4. Domain → Application → Infrastructure → Api, theo bảng phân tầng ở mục Kiến trúc.
+5. Test hợp đồng cho từng endpoint + test cách ly hai user cho **từng bảng và từng view**.
+6. Deploy `.\tools\deploy.ps1` — schema đi theo code, tự nạp.
+7. Angular: thêm `*-api.service.ts` mới, giữ nguyên chữ ký hàm cũ, đổi chỗ `inject` ở
+   component. Chỉ gỡ bản Supabase sau khi đã dùng thật một thời gian.
 
 ### 🔒 Marketing — QUYẾT ĐỊNH 2026-08-29: ở lại Supabase, KHÔNG chuyển
 
@@ -148,21 +195,17 @@ trên Vercel không vào được NAS sau Tailscale"*. Đúng lúc viết, sai t
 `storechecking.tail631d54.ts.net` nay là địa chỉ công khai có chứng chỉ thật. Nếu sau này
 đổi ý thì rào cản còn lại chỉ là xác thực, không phải đường mạng.
 
+### ✅ Nghiệp vụ nằm trong database — đã bê sang, giữ cả hai lớp
 
-### Một thứ phải giải TRƯỚC khi tới Kho hàng
+Hai trigger plpgsql chặn tồn kho âm, nay chạy trên NAS y như trên Supabase:
 
-- **Trigger `check_stock()`** — nghiệp vụ chặn bán vượt tồn đang nằm trong database.
-  plpgsql thuần, không đụng `auth.uid()`, bê nguyên sang được. Làm cả hai lớp: giữ trigger
-  làm chốt cuối, thêm kiểm ở Application để báo lỗi tử tế.
+- `check_stock()` trên `sales` — không cho bán vượt `nhập − đã bán − đã hỏng`
+- `check_damage()` trên `product_damages` — không cho ghi hư vượt tồn khả dụng
 
-### Việc lặt vặt còn nợ
-
-- [ ] **Thu hồi token GHCR.** Token đang dùng có quyền `repo` (đọc/ghi mọi repo riêng tư)
-      trong khi chỉ cần `read:packages`, và nó nằm dạng chữ thường ở hai chỗ trên NAS:
-      `watchtower/config.json` và `/root/.docker/config.json`.
-- [ ] Bỏ `listEnglishWords` / `addEnglishWord` / `*SavedSentence*` khỏi `supabase.service.ts`
-      bên repo Angular — code chết, không còn chỗ nào gọi.
-- [ ] Angular còn 3 migration Supabase chưa chạy (xem mục cuối file).
+Tầng Application kiểm **trước** để câu báo lỗi đọc được và có tên sản phẩm; trigger vẫn giữ
+làm chốt cuối cho trường hợp hai đơn cùng mua nốt món cuối, cả hai đều qua được vòng kiểm.
+`UnitOfWork` bắt `PostgresException` mã `P0001` rồi đổi thành `ValidationException`, nên lỗi
+trigger cũng ra 400 kèm nguyên câu tiếng Việt của nó chứ không phải 500 kèm stack trace.
 
 ---
 
@@ -320,50 +363,36 @@ kể cả khi biết Id).
 
 ---
 
-## Giai đoạn 1 — Lịch làm ⏸️ DỪNG, ở lại Supabase
+## Giai đoạn 1 — Lịch làm ✅ XONG
 
-Hai bảng: `work_days`, `work_month_notes`.
+Hai bảng: `work_days`, `work_month_notes`. 6 endpoint, `db/001-work-calendar.sql`.
 
-- [x] Schema `db/001-work-calendar.sql`
-- [x] 6 endpoint + `/health` + `/api/me`
-- [x] Test tầng EF và cách ly dữ liệu
-- [x] **Deploy lên NAS** — `http://192.168.1.76:8140/health` trả `{"ok":true,"db":true}`
-- ~~Angular trỏ sang API mới~~ — KHÔNG làm nữa, Lịch làm ở lại Supabase
+Từng có lúc quyết định "ở lại Supabase" (2026-08-25) rồi bị đảo lại; nay Angular đã trỏ
+sang qua `work-calendar-api.service.ts`.
 
-API lịch làm vẫn chạy trên NAS và vẫn hoạt động, chỉ là Angular không gọi tới. Giữ lại
-làm nền, không xoá.
-
-**Lưu ý:** hành vi "ô không ghi chú và không màu thì XOÁ dòng" là hành vi phá dữ liệu —
-cần test kỹ ở bước Swagger.
+**Lưu ý còn nguyên giá trị:** hành vi "ô không ghi chú và không màu thì XOÁ dòng" là hành
+vi phá dữ liệu. Có test hợp đồng ghim nó ở cả hai chiều — xoá đúng lúc cần xoá, và KHÔNG
+lưu dòng rỗng.
 
 ---
 
-## Giai đoạn 2 — Tiếng Anh 🔄 ĐANG LÀM
+## Giai đoạn 2 — Tiếng Anh ✅ XONG
 
-Hai bảng: `english_words`, `speaking_saved`.
+Hai bảng: `english_words`, `speaking_saved`. 6 endpoint, `db/002-english.sql`.
 
-**Đây là tính năng DUY NHẤT còn chuyển sang .NET.** Lý do: dữ liệu tích dần theo năm vì
-luyện hằng ngày, và nó không liên quan gì tới khách hàng nên hỏng cũng không ảnh hưởng ai.
+Module đầu tiên chạy hết vòng, và để lại hai bài học vẫn còn dùng:
 
-- [x] Schema `db/002-english.sql`
-- [x] 6 endpoint (từ vựng + câu đã lưu), có phân trang và tìm kiếm
-- [x] Test tầng EF và cách ly dữ liệu — 23/23 đạt
-- [x] Nạp `db/002-english.sql` vào Postgres trên NAS (chạy tay, DB đã có dữ liệu)
-- [x] **Deploy lên NAS + Tailscale HTTPS** — `https://storechecking.tail631d54.ts.net`
-      trả 401 ở mọi route tiếng Anh (route có, chỉ thiếu token)
-- [x] **Chuyển dữ liệu cũ từ Supabase sang** — 17 từ + 1 câu, đếm trước/sau khớp nhau.
-      Dữ liệu gốc trên Supabase vẫn còn nguyên, chưa xoá.
-- [x] Angular trỏ sang API mới (`english-api.service.ts`)
-- [x] **Bật Funnel + sửa lỗi 500 ở `GET /words`** — endpoint này chưa từng chạy được:
-      `x.Data.RootElement` nằm trong câu LINQ làm EF ngã lúc dựng truy vấn
-- [ ] Bỏ `listEnglishWords` / `addEnglishWord` / `*SavedSentence*` khỏi `supabase.service.ts`
-      — đã không còn chỗ nào gọi, chỉ là code chết ← còn lại đúng việc này
+- **Lỗi 500 ở `GET /words` sống suốt đời endpoint đó** vì `x.Data.RootElement` nằm trong
+  câu LINQ — xem mục Quy ước. Nay có test ghim.
+- **Phân trang phải có khoá phụ.** `created_at` một mình không đủ: các dòng ghi trong cùng
+  transaction trùng nhau đúng từng micro giây, và hoà nhau thì thứ tự không xác định, làm
+  trang 2 lặp lại dòng của trang 1. Thêm `Id` là hết.
+
+Phần **sinh câu bằng AI** (`/api/english`, `/api/speaking`) **giữ trên Vercel** — không đụng
+database, `GEMINI_API_KEY` đã ở đó.
 
 **URL API:** `https://storechecking.tail631d54.ts.net`, có Funnel nên gọi được từ mạng bất
-kỳ, thiết bị **không cần bật Tailscale**. Chứng chỉ Let's Encrypt thật.
-
-Phần **sinh câu bằng AI** (`/api/english`, `/api/speaking`) **giữ nguyên trên Vercel** —
-nó không đụng database, và `GEMINI_API_KEY` đang ở đó rồi. Không có lý do gì phải chuyển.
+kỳ. Chứng chỉ Let's Encrypt thật.
 
 ---
 
@@ -509,18 +538,23 @@ Khảo sát ngày 2026-08-27 từ `D:\Dev\StoreChecking` (repo Angular, remote
 
 | Module | Bảng / view | Số hàm | Trạng thái |
 |---|---|---|---|
-| Lịch làm | `work_days`, `work_month_notes` | 5 | ✅ có API, Angular chưa trỏ sang |
+| Lịch làm | `work_days`, `work_month_notes` | 5 | ✅ xong |
 | Tiếng Anh | `english_words`, `speaking_saved` | 6 | ✅ xong |
-| Ghi chú | `notes` | 4 | 🔄 API xong, Angular chưa trỏ sang |
-| Đóng gói | `packing_videos` | 7 | 🔄 API xong, Angular chưa trỏ sang |
-| Chi tiêu | `expense_categories`, `expenses`, `monthly_income`, `v_expense_month_total`, `v_expense_month_category` | 11 | 🔄 API xong, Angular chưa trỏ sang |
+| Ghi chú | `notes` | 4 | ✅ xong |
+| Đóng gói | `packing_videos` | 7 | ✅ xong (2 hàm chết không port) |
+| Chi tiêu | `expense_categories`, `expenses`, `monthly_income`, `v_expense_month_total`, `v_expense_month_category` | 11 | ✅ xong |
 | Marketing | `marketing_groups`, `marketing_posts`, `marketing_post_targets`, `post_queue` | 16 | 🔒 **ở lại Supabase** — cron Vercel phụ thuộc |
-| Kho hàng | `batches`, `products`, `sales`, `product_damages`, `product_stock`, `batch_summary` | 20 | 🔄 API xong, Angular chưa trỏ sang |
+| Kho hàng | `batches`, `products`, `sales`, `product_damages`, `product_stock`, `batch_summary` | 20 | ✅ xong |
 | Đơn hàng | `orders` | 3 | 🔒 **ở lại Supabase vĩnh viễn** |
 
-Thứ tự chuyển: **Ghi chú → Đóng gói → Chi tiêu → Marketing → Kho hàng.** Nhỏ và ít giá
-trị trước, đúng nguyên tắc đã có. Kho hàng đi sau cùng vì dữ liệu quý nhất và có nhiều
-thứ khó nhất.
+Thứ tự đã đi: **Ghi chú → Đóng gói → Chi tiêu → Kho hàng.** Nhỏ và ít giá trị trước, Kho
+hàng sau cùng vì dữ liệu quý nhất và nhiều thứ khó nhất. Marketing bị bỏ ra giữa chừng khi
+phát hiện cron Vercel phụ thuộc vào `post_queue`.
+
+Thêm một endpoint không có trong bản đồ ban đầu: **`GET /api/backup`**, thay
+`dumpAllData()`. Nó đọc 8 bảng bằng `row_to_json` và là **chỗ duy nhất trong repo viết SQL
+tay, không đi qua owner filter của EF** — lý do và cách canh ghi ngay trong
+`BackupRepository`.
 
 ### Ba thứ KHÔNG chỉ là "viết lại hàm"
 
@@ -608,6 +642,8 @@ Hai hướng còn lại nếu sau này muốn bỏ ràng buộc phải bật Tai
 - [ ] **Lỗi JWT "issued at future"** bên Supabase vẫn chưa tìm ra nguyên nhân. API .NET
       đã đặt `ClockSkew = 60s` nên tính năng nào chuyển sang đây là hết lỗi — nhưng gốc
       rễ thì vẫn chưa rõ.
-- [ ] Angular còn **3 migration Supabase chưa chạy**: `migration-work-calendar.sql`,
-      `migration-work-month-notes.sql`, `migration-speaking-saved.sql`. Vì Lịch làm nay
-      ở lại Supabase, **cả ba đều vẫn cần chạy**.
+- [x] ~~Angular còn 3 migration Supabase chưa chạy~~ — **không còn cần**. Cả ba
+      (`migration-work-calendar.sql`, `migration-work-month-notes.sql`,
+      `migration-speaking-saved.sql`) đều thuộc bảng nay đã sang NAS, và schema bên NAS
+      dựng từ `db/*.sql` chứ không từ mấy file đó. Giữ lại trong repo Angular như dấu vết
+      lịch sử.
