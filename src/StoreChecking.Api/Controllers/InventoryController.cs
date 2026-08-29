@@ -92,10 +92,16 @@ public sealed class InventoryController(InventoryService inventory) : Controller
 
     // ---------- Bán hàng ----------
 
-    /// <summary>Lịch sử bán toàn bộ, kèm tên sản phẩm và tên lô. limit mặc định 300.</summary>
+    /// <summary>Một trang lịch sử bán, kèm tên sản phẩm và tên lô.</summary>
+    /// <remarks>
+    /// `limit` đếm theo ĐƠN chứ không theo dòng — một đơn nhiều sản phẩm vẫn về đủ.
+    /// Mặc định 20 đơn, tối đa 5000. `from`/`to` là mốc thời gian tuyệt đối, `to` không tính.
+    /// Trả kèm tổng số đơn và tổng tiền của CẢ khoảng, không phải của riêng trang này.
+    /// </remarks>
     [HttpGet("sales")]
-    public async Task<IActionResult> ListSales(int? limit, CancellationToken ct) =>
-        Ok(await inventory.ListSalesAsync(limit, ct));
+    public async Task<IActionResult> ListSales(
+        int? limit, int? offset, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct) =>
+        Ok(await inventory.ListSalesAsync(limit, offset, from, to, ct));
 
     /// <summary>Lịch sử bán của một lô.</summary>
     [HttpGet("batches/{batchId:guid}/sales")]

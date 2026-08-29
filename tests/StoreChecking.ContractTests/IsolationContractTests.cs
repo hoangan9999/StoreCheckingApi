@@ -160,7 +160,7 @@ public sealed class IsolationContractTests(ApiFactory api)
         await a.PutJson("/api/expenses/income", new { year = 2026, month = 8, income = 9_000m, note = (string?)null });
 
         Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/expenses/categories"))).GetArrayLength());
-        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/expenses?year=2026&month=8"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Items(await b.GetAsync("/api/expenses?year=2026&month=8"))).GetArrayLength());
         Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/expenses/income?year=2026"))).GetArrayLength());
 
         Assert.Equal(HttpStatusCode.NotFound, (await b.DeleteAsync($"/api/expenses/categories/{cat}")).StatusCode);
@@ -169,7 +169,7 @@ public sealed class IsolationContractTests(ApiFactory api)
             new { categoryId = cat, spentOn = "2026-08-16", description = "B sửa trộm", amount = 1m, note = (string?)null })).StatusCode);
 
         // A's own data untouched.
-        Assert.Equal(1, (await Json.Read(await a.GetAsync("/api/expenses?year=2026&month=8"))).GetArrayLength());
+        Assert.Equal(1, (await Json.Items(await a.GetAsync("/api/expenses?year=2026&month=8"))).GetArrayLength());
     }
 
     // Views need the owner filter as much as tables do, and it is easier to forget there:
@@ -241,7 +241,7 @@ public sealed class IsolationContractTests(ApiFactory api)
         // Tables and both views: B sees nothing at all.
         Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/inventory/batches"))).GetArrayLength());
         Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/inventory/stock"))).GetArrayLength());
-        Assert.Equal(0, (await Json.Read(await b.GetAsync("/api/inventory/sales"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Items(await b.GetAsync("/api/inventory/sales"))).GetArrayLength());
 
         // Nor by knowing the ids.
         Assert.Equal(HttpStatusCode.NotFound, (await b.GetAsync($"/api/inventory/batches/{batch}")).StatusCode);

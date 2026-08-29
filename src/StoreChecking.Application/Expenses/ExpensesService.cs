@@ -16,6 +16,12 @@ public sealed class ExpensesService(
     ICurrentUser user,
     IUnitOfWork uow)
 {
+    /// <summary>Transactions per page when the client does not ask for a size.</summary>
+    private const int DefaultPage = 20;
+
+    /// <summary>Ceiling on one page, so a bad `limit` cannot pull the whole table.</summary>
+    private const int MaxPage = 500;
+
     /// <summary>Date format shared with the Angular client, same as the work calendar.</summary>
     public const string DayFormat = "yyyy-MM-dd";
 
@@ -107,15 +113,41 @@ public sealed class ExpensesService(
     // ---------- Transactions ----------
 
     /// <summary>Everything spent in one calendar month, newest first.</summary>
-    public async Task<IReadOnlyList<ExpenseDto>> ListAsync(int year, int month, CancellationToken ct = default)
+    /// <summary>
+    /// A page of one month's transactions, newest first.
+    /// <para><paramref name="on"/> narrows to a single day — the "chỉ hôm nay" tick. It is
+    /// applied here rather than in the browser because the browser now only holds a page,
+    /// and filtering a page would quietly hide everything further down.</para>
+    /// </summary>
+    public async Task<ExpensePageDto> ListAsync(
+        int year, int month, int? limit, int? offset, Guid? categoryId, DateOnly? on,
+        CancellationToken ct = default)
     {
         GuardMonth(year, month);
 
         var from = new DateOnly(year, month, 1);
         var to = from.AddMonths(1);          // exclusive, so December rolls into January cleanly
 
-        var rows = await expenses.ListRangeAsync(from, to, ct);
-        return rows.Select(ToDto).ToList();
+        var take = limit is null or < 1 ? DefaultPage : Math.Min(limit.Value, MaxPage);
+        var skip = Math.Max(offset ?? 0, 0);
+
+        var (count, amount) = await expenses.SummariseAsync(from, to, categoryId, on, ct);
+        var rows = await expenses.ListPageAsync(from, to, categoryId, on, skip, take, ct);
+
+        return new ExpensePageDto(count, amount, take, skip, rows.Select(ToDto).ToList());
+    }
+
+    /// <summary>Spend per category per day for a month, for the daily-limit warning.</summary>
+    public async Task<IReadOnlyList<DayCategorySpendDto>> DayTotalsAsync(
+        int year, int month, CancellationToken ct = default)
+    {
+        GuardMonth(year, month);
+
+        var from = new DateOnly(year, month, 1);
+        var to = from.AddMonths(1);
+
+        var rows = await expenses.DayTotalsAsync(from, to, ct);
+        return rows.Select(r => new DayCategorySpendDto(r.CategoryId, r.SpentOn, r.Total)).ToList();
     }
 
     public async Task<ExpenseDto> AddAsync(SaveExpenseRequest body, CancellationToken ct = default)

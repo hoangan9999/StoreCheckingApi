@@ -28,6 +28,77 @@ public sealed class ExpensesContractTests(ApiFactory api)
         HttpClient c, Guid categoryId, string on, decimal amount, string? description = null) =>
         c.PostJson("/api/expenses", new { categoryId, spentOn = on, description, amount, note = (string?)null });
 
+    // ---------- Phân trang giao dịch ----------
+
+    [DbFact]
+    public async Task Giao_dich_mac_dinh_20_nhung_tong_tinh_ca_thang()
+    {
+        var c = NewUser();
+        var cat = await NewCategory(c);
+        for (var d = 1; d <= 25; d++) await Spend(c, cat, $"2026-08-{d:00}", 10m);
+
+        var body = await Json.Read(await c.GetAsync("/api/expenses?year=2026&month=8"));
+        Json.HasExactly(body, "total", "totalAmount", "limit", "offset", "items");
+
+        Assert.Equal(25, body.GetProperty("total").GetInt32());
+        Assert.Equal(250m, body.GetProperty("totalAmount").GetDecimal());
+        Assert.Equal(20, body.GetProperty("items").GetArrayLength());
+
+        var page2 = await Json.Items(await c.GetAsync("/api/expenses?year=2026&month=8&limit=20&offset=20"));
+        Assert.Equal(5, page2.GetArrayLength());
+    }
+
+    // The filters have to run on the server now. Filtering in the browser would only sift
+    // the page in hand and quietly hide everything further down the month.
+    [DbFact]
+    public async Task Loc_danh_muc_va_loc_mot_ngay_tinh_lai_ca_tong()
+    {
+        var c = NewUser();
+        var an = await NewCategory(c, "Ăn uống");
+        var xang = await NewCategory(c, "Xăng xe");
+
+        await Spend(c, an, "2026-08-10", 10m);
+        await Spend(c, an, "2026-08-11", 20m);
+        await Spend(c, xang, "2026-08-10", 40m);
+
+        var byCat = await Json.Read(await c.GetAsync($"/api/expenses?year=2026&month=8&categoryId={an}"));
+        Assert.Equal(2, byCat.GetProperty("total").GetInt32());
+        Assert.Equal(30m, byCat.GetProperty("totalAmount").GetDecimal());
+
+        var oneDay = await Json.Read(await c.GetAsync("/api/expenses?year=2026&month=8&on=2026-08-10"));
+        Assert.Equal(2, oneDay.GetProperty("total").GetInt32());
+        Assert.Equal(50m, oneDay.GetProperty("totalAmount").GetDecimal());
+    }
+
+    // The daily-limit warning needs a per (category, day) total for the whole month. It used
+    // to be added up in the browser from the full list, which a paged list cannot supply.
+    [DbFact]
+    public async Task Tong_chi_theo_tung_ngay_tung_danh_muc()
+    {
+        var c = NewUser();
+        var an = await NewCategory(c, "Ăn uống");
+        var xang = await NewCategory(c, "Xăng xe");
+
+        await Spend(c, an, "2026-08-10", 10m);
+        await Spend(c, an, "2026-08-10", 15m);
+        await Spend(c, an, "2026-08-11", 20m);
+        await Spend(c, xang, "2026-08-10", 40m);
+        await Spend(c, an, "2026-09-01", 99m);          // tháng khác, không được lọt vào
+
+        var rows = await Json.Read(await c.GetAsync("/api/expenses/summary/days?year=2026&month=8"));
+        Assert.Equal(3, rows.GetArrayLength());
+        Json.HasExactly(rows[0], "categoryId", "spentOn", "total");
+
+        decimal Total(Guid cat, string day) => rows.EnumerateArray()
+            .Single(x => x.GetProperty("categoryId").GetGuid() == cat
+                      && x.GetProperty("spentOn").GetString() == day)
+            .GetProperty("total").GetDecimal();
+
+        Assert.Equal(25m, Total(an, "2026-08-10"));
+        Assert.Equal(20m, Total(an, "2026-08-11"));
+        Assert.Equal(40m, Total(xang, "2026-08-10"));
+    }
+
     // ---------- Danh mục ----------
 
     [DbFact]
@@ -207,7 +278,7 @@ public sealed class ExpensesContractTests(ApiFactory api)
         await Spend(c, cat, "2026-08-31", 3m);     // cuối tháng
         await Spend(c, cat, "2026-09-01", 4m);     // tháng sau
 
-        var listed = await Json.Read(await c.GetAsync("/api/expenses?year=2026&month=8"));
+        var listed = await Json.Items(await c.GetAsync("/api/expenses?year=2026&month=8"));
         Assert.Equal(2, listed.GetArrayLength());
         Assert.Equal(["2026-08-31", "2026-08-01"],
             listed.EnumerateArray().Select(x => x.GetProperty("spentOn").GetString()!).ToArray());
@@ -224,11 +295,11 @@ public sealed class ExpensesContractTests(ApiFactory api)
         await Spend(c, cat, "2026-12-31", 10m);
         await Spend(c, cat, "2027-01-01", 20m);
 
-        var dec = await Json.Read(await c.GetAsync("/api/expenses?year=2026&month=12"));
+        var dec = await Json.Items(await c.GetAsync("/api/expenses?year=2026&month=12"));
         Assert.Equal(1, dec.GetArrayLength());
         Assert.Equal("2026-12-31", dec[0].GetProperty("spentOn").GetString());
 
-        var jan = await Json.Read(await c.GetAsync("/api/expenses?year=2027&month=1"));
+        var jan = await Json.Items(await c.GetAsync("/api/expenses?year=2027&month=1"));
         Assert.Equal(1, jan.GetArrayLength());
         Assert.Equal("2027-01-01", jan[0].GetProperty("spentOn").GetString());
     }
@@ -298,7 +369,7 @@ public sealed class ExpensesContractTests(ApiFactory api)
         Assert.Equal(250m, e.GetProperty("amount").GetDecimal());
 
         Assert.Equal(HttpStatusCode.NoContent, (await c.DeleteAsync($"/api/expenses/{id}")).StatusCode);
-        Assert.Equal(0, (await Json.Read(await c.GetAsync("/api/expenses?year=2026&month=8"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Items(await c.GetAsync("/api/expenses?year=2026&month=8"))).GetArrayLength());
     }
 
     [DbFact]

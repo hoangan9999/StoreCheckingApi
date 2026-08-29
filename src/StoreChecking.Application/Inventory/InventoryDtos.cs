@@ -59,6 +59,15 @@ public record SaleRowDto(
     string? Note, Guid? SaleGroupId, DateTimeOffset SoldAt,
     string ProductName, string BatchName, int? BatchPriority);
 
+/// <summary>
+/// One page of sales history.
+/// <para><c>Total</c> counts ORDERS and <c>TotalAmount</c> sums the whole range, not the
+/// page — that is what keeps "N đơn" and the revenue figure honest while the list itself
+/// only holds what has been scrolled to.</para>
+/// </summary>
+public record SalesPageDto(
+    int Total, decimal TotalAmount, int Limit, int Offset, IReadOnlyList<SaleRowDto> Items);
+
 /// <summary>One item of an order.</summary>
 public record SaleItem(Guid ProductId, int Quantity, decimal SellPrice);
 

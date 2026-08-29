@@ -22,8 +22,26 @@ public interface IExpenseCategoryRepository
 /// <summary>Spending transactions.</summary>
 public interface IExpenseRepository
 {
-    /// <summary>One calendar month, newest first. <paramref name="to"/> is exclusive.</summary>
-    Task<IReadOnlyList<Expense>> ListRangeAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
+    /// <summary>One page of a date range, newest first. <paramref name="to"/> is exclusive.</summary>
+    Task<IReadOnlyList<Expense>> ListPageAsync(
+        DateOnly from, DateOnly to, Guid? categoryId, DateOnly? on, int skip, int take,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// How many transactions match and what they add up to, across the whole range rather
+    /// than one page — the month total on screen must not shrink to the rows loaded so far.
+    /// </summary>
+    Task<(int Count, decimal Amount)> SummariseAsync(
+        DateOnly from, DateOnly to, Guid? categoryId, DateOnly? on, CancellationToken ct = default);
+
+    /// <summary>
+    /// Spend per category per day over a range.
+    /// <para>This is what the daily-limit warning runs on. It used to be added up in the
+    /// browser from the month's full list, which stops working the moment the list is paged
+    /// — so the sum moves to where all the rows still are.</para>
+    /// </summary>
+    Task<IReadOnlyList<(Guid CategoryId, DateOnly SpentOn, decimal Total)>> DayTotalsAsync(
+        DateOnly from, DateOnly to, CancellationToken ct = default);
 
     Task<Expense?> FindAsync(Guid id, CancellationToken ct = default);
     void Add(Expense row);

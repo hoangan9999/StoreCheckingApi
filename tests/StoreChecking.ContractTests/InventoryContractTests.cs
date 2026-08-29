@@ -38,6 +38,142 @@ public sealed class InventoryContractTests(ApiFactory api)
             note = (string?)null,
         });
 
+    /// <summary>Places <paramref name="count"/> separate one-line orders, on consecutive days.</summary>
+    private static async Task ManyOrders(HttpClient c, Guid productId, int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var res = await c.PostJson("/api/inventory/sales", new
+            {
+                items = new[] { new { productId, quantity = 1, sellPrice = 100m } },
+                soldAt = $"2026-08-{i + 1:00}T10:00:00Z",
+                shippingFee = 0m,
+                note = (string?)null,
+            });
+            Assert.Equal(HttpStatusCode.Created, res.StatusCode);
+        }
+    }
+
+    // ---------- Phân trang lịch sử bán ----------
+
+    [DbFact]
+    public async Task Mac_dinh_tra_20_don_nhung_dem_du_tong()
+    {
+        var c = NewUser();
+        var (_, product) = await NewBatch(c, quantity: 100);
+        await ManyOrders(c, product, 25);
+
+        var body = await Json.Read(await c.GetAsync("/api/inventory/sales"));
+        Json.HasExactly(body, "total", "totalAmount", "limit", "offset", "items");
+
+        // Tổng đếm theo CẢ khoảng, không phải theo số đã tải — nếu không thì "N đơn" trên
+        // màn hình sẽ tụt xuống 20 và người dùng tưởng mất dữ liệu.
+        Assert.Equal(25, body.GetProperty("total").GetInt32());
+        Assert.Equal(2_500m, body.GetProperty("totalAmount").GetDecimal());
+        Assert.Equal(20, body.GetProperty("items").GetArrayLength());
+    }
+
+    [DbFact]
+    public async Task Cuon_them_khong_lap_don_va_khong_sot_don()
+    {
+        var c = NewUser();
+        var (_, product) = await NewBatch(c, quantity: 100);
+        await ManyOrders(c, product, 25);
+
+        var first = await Json.Items(await c.GetAsync("/api/inventory/sales?limit=20&offset=0"));
+        var second = await Json.Items(await c.GetAsync("/api/inventory/sales?limit=20&offset=20"));
+
+        Assert.Equal(20, first.GetArrayLength());
+        Assert.Equal(5, second.GetArrayLength());
+
+        var ids = first.EnumerateArray().Concat(second.EnumerateArray())
+            .Select(x => x.GetProperty("id").GetGuid()).ToList();
+
+        Assert.Equal(25, ids.Count);
+        Assert.Equal(25, ids.Distinct().Count());
+    }
+
+    // Paging counts orders, not rows. Were it counting rows, this two-line order would be
+    // cut across the boundary and the page holding half of it would show half its total.
+    [DbFact]
+    public async Task Don_nhieu_dong_ve_nguyen_ven_khong_bi_cat_giua_hai_trang()
+    {
+        var c = NewUser();
+        var created = await Json.Read(await c.PostJson("/api/inventory/batches", new
+        {
+            name = "Lô ghép",
+            importDate = "2026-08-01",
+            totalCost = 500m,
+            note = (string?)null,
+            products = new[]
+            {
+                new { name = "SP1", quantity = 10, sellPrice = 100m },
+                new { name = "SP2", quantity = 10, sellPrice = 100m },
+            },
+        }));
+
+        var batch = created.GetProperty("id").GetGuid();
+        var products = await Json.Read(await c.GetAsync($"/api/inventory/batches/{batch}/products"));
+        var p1 = products[0].GetProperty("id").GetGuid();
+        var p2 = products[1].GetProperty("id").GetGuid();
+
+        await c.PostJson("/api/inventory/sales", new
+        {
+            items = new[]
+            {
+                new { productId = p1, quantity = 1, sellPrice = 100m },
+                new { productId = p2, quantity = 1, sellPrice = 100m },
+            },
+            soldAt = "2026-08-01T10:00:00Z", shippingFee = 0m, note = (string?)null,
+        });
+        await c.PostJson("/api/inventory/sales", new
+        {
+            items = new[] { new { productId = p1, quantity = 1, sellPrice = 100m } },
+            soldAt = "2026-08-02T10:00:00Z", shippingFee = 0m, note = (string?)null,
+        });
+
+        var page1 = await Json.Read(await c.GetAsync("/api/inventory/sales?limit=1"));
+        Assert.Equal(2, page1.GetProperty("total").GetInt32());
+        Assert.Equal(1, page1.GetProperty("items").GetArrayLength());
+
+        var page2 = await Json.Items(await c.GetAsync("/api/inventory/sales?limit=1&offset=1"));
+        Assert.Equal(2, page2.GetArrayLength());
+
+        var group = page2[0].GetProperty("saleGroupId").GetString();
+        Assert.NotNull(group);
+        Assert.Equal(group, page2[1].GetProperty("saleGroupId").GetString());
+    }
+
+    [DbFact]
+    public async Task Tong_tien_tru_phi_ship_va_tinh_tren_ca_khoang()
+    {
+        var c = NewUser();
+        var (_, product) = await NewBatch(c, quantity: 100);
+
+        await Sell(c, product, 2, shipping: 30m);      // 2 x 100 - 30 = 170
+        await Sell(c, product, 1);                     // 100
+
+        var body = await Json.Read(await c.GetAsync("/api/inventory/sales?limit=1"));
+
+        Assert.Equal(1, body.GetProperty("items").GetArrayLength());
+        Assert.Equal(270m, body.GetProperty("totalAmount").GetDecimal());
+    }
+
+    // `to` is exclusive, which is what makes "chỉ hôm nay" mean one day and not two.
+    [DbFact]
+    public async Task Loc_theo_khoang_thoi_gian_khong_tinh_moc_cuoi()
+    {
+        var c = NewUser();
+        var (_, product) = await NewBatch(c, quantity: 100);
+        await ManyOrders(c, product, 5);               // ngày 01..05 tháng 8
+
+        var body = await Json.Read(await c.GetAsync(
+            "/api/inventory/sales?from=2026-08-03T00:00:00Z&to=2026-08-05T00:00:00Z"));
+
+        Assert.Equal(2, body.GetProperty("total").GetInt32());       // ngày 03 và 04
+        Assert.Equal(200m, body.GetProperty("totalAmount").GetDecimal());
+    }
+
     // ---------- Lô hàng ----------
 
     [DbFact]
@@ -154,7 +290,7 @@ public sealed class InventoryContractTests(ApiFactory api)
         Assert.Equal(HttpStatusCode.NoContent, (await c.DeleteAsync($"/api/inventory/batches/{batch}")).StatusCode);
 
         Assert.Equal(0, (await Json.Read(await c.GetAsync("/api/inventory/batches"))).GetArrayLength());
-        Assert.Equal(0, (await Json.Read(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Items(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
         Assert.Equal(0, (await Json.Read(await c.GetAsync("/api/inventory/stock"))).GetArrayLength());
     }
 
@@ -252,7 +388,7 @@ public sealed class InventoryContractTests(ApiFactory api)
         var group = rows[0].GetProperty("saleGroupId").GetGuid();
 
         Assert.Equal(HttpStatusCode.NoContent, (await c.DeleteAsync($"/api/inventory/sales/group/{group}")).StatusCode);
-        Assert.Equal(0, (await Json.Read(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Items(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
         Assert.Equal(HttpStatusCode.NotFound, (await c.DeleteAsync($"/api/inventory/sales/group/{Guid.NewGuid()}")).StatusCode);
     }
 
@@ -263,7 +399,7 @@ public sealed class InventoryContractTests(ApiFactory api)
         var (_, product) = await NewBatch(c, name: "Lô đặt tên");
         await Sell(c, product, 1);
 
-        var rows = await Json.Read(await c.GetAsync("/api/inventory/sales"));
+        var rows = await Json.Items(await c.GetAsync("/api/inventory/sales"));
         Assert.Equal(1, rows.GetArrayLength());
 
         var s = rows[0];
@@ -286,7 +422,7 @@ public sealed class InventoryContractTests(ApiFactory api)
         Assert.Equal("Không đủ tồn kho cho 'SP1': còn 5, yêu cầu bán 6.",
             (await Json.Read(res)).GetProperty("error").GetString());
 
-        Assert.Equal(0, (await Json.Read(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Items(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
     }
 
     [DbFact]
@@ -322,7 +458,7 @@ public sealed class InventoryContractTests(ApiFactory api)
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         Assert.Equal("Không đủ tồn kho cho 'SP1': còn 2, yêu cầu bán 3.",
             (await Json.Read(res)).GetProperty("error").GetString());
-        Assert.Equal(0, (await Json.Read(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
+        Assert.Equal(0, (await Json.Items(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
     }
 
     [DbFact]

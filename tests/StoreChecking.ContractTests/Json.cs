@@ -24,6 +24,20 @@ public static class Json
         Assert.Equal(names.OrderBy(n => n, StringComparer.Ordinal), actual);
     }
 
+    /// <summary>
+    /// The `items` of a paged response, after checking the envelope is intact.
+    /// <para>Paged endpoints answer { total, totalAmount, limit, offset, items }, where the
+    /// two figures describe the WHOLE filtered set rather than the page. That is what lets
+    /// a screen show a running total while holding only what has been scrolled to, so the
+    /// envelope is part of the contract and is asserted here rather than assumed.</para>
+    /// </summary>
+    public static async Task<JsonElement> Items(HttpResponseMessage res)
+    {
+        var body = await Read(res);
+        HasExactly(body, "total", "totalAmount", "limit", "offset", "items");
+        return body.GetProperty("items");
+    }
+
     public static StringContent Body(object value) =>
         new(JsonSerializer.Serialize(value), System.Text.Encoding.UTF8, "application/json");
 

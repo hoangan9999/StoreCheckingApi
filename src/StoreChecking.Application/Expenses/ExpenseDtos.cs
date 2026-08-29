@@ -39,5 +39,21 @@ public record SetIncomeRequest(int Year, int Month, decimal Income, string? Note
 /// <summary>Spending in one category in one month.</summary>
 public record MonthCategorySpendDto(Guid CategoryId, int Year, int Month, decimal Spent, long TxCount);
 
+/// <summary>
+/// One page of transactions.
+/// <para><c>Total</c> and <c>TotalAmount</c> cover the whole filtered month, not the page,
+/// so the count and the month total stay right no matter how far down the list has been
+/// scrolled.</para>
+/// </summary>
+public record ExpensePageDto(
+    int Total, decimal TotalAmount, int Limit, int Offset, IReadOnlyList<ExpenseDto> Items);
+
+/// <summary>
+/// What one category was spent on in one day.
+/// <para>Feeds the daily-limit warning. The browser used to add this up from the month's
+/// full list, which no longer works once the list is paged.</para>
+/// </summary>
+public record DayCategorySpendDto(Guid CategoryId, DateOnly SpentOn, decimal Total);
+
 /// <summary>Total spending in one month.</summary>
 public record MonthTotalDto(int Year, int Month, decimal Spent);

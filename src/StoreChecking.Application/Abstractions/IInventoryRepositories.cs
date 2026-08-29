@@ -36,9 +36,26 @@ public interface IProductRepository
 /// <summary>Sale lines.</summary>
 public interface ISaleRepository
 {
-    /// <summary>Every sale, newest first, with the product and batch named.</summary>
+    /// <summary>
+    /// One page of sales history, newest first, with the product and batch named.
+    /// <para>Pages count ORDERS, not rows. An order is every row sharing a
+    /// <c>SaleGroupId</c>, and a row without one is an order by itself. Paging by row
+    /// instead would split an order across a page boundary, and the part that landed on
+    /// the first page would show a total for only some of its lines.</para>
+    /// <para>The rows come back already in display order: the page's orders in sequence,
+    /// lines of an order kept together.</para>
+    /// </summary>
     Task<IReadOnlyList<(Sale Sale, string ProductName, string BatchName, int? BatchPriority)>>
-        ListAllAsync(int take, CancellationToken ct = default);
+        ListPageAsync(int skip, int take, DateTimeOffset? from, DateTimeOffset? to,
+                      CancellationToken ct = default);
+
+    /// <summary>
+    /// How many orders match and what they add up to, across the WHOLE range rather than
+    /// one page. The screen only ever holds a page, so its running totals have to be
+    /// counted here or they would shrink to whatever happens to be loaded.
+    /// </summary>
+    Task<(int Orders, decimal Amount)> SummariseAsync(
+        DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct = default);
 
     Task<IReadOnlyList<Sale>> ListByBatchAsync(Guid batchId, CancellationToken ct = default);
     Task<Sale?> FindAsync(Guid id, CancellationToken ct = default);

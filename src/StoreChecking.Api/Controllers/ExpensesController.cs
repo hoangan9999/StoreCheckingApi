@@ -46,10 +46,17 @@ public sealed class ExpensesController(ExpensesService expenses) : ControllerBas
 
     // ---------- Giao dịch ----------
 
-    /// <summary>Giao dịch trong một tháng, mới nhất trước.</summary>
+    /// <summary>Một trang giao dịch trong tháng, mới nhất trước.</summary>
+    /// <remarks>
+    /// Mặc định 20 giao dịch, tối đa 500. `categoryId` lọc theo danh mục, `on` lọc đúng
+    /// một ngày (ô "chỉ hôm nay"). Trả kèm tổng số giao dịch và tổng tiền của CẢ tháng đã
+    /// lọc, không phải của riêng trang này.
+    /// </remarks>
     [HttpGet]
-    public async Task<IActionResult> List(int year, int month, CancellationToken ct) =>
-        Ok(await expenses.ListAsync(year, month, ct));
+    public async Task<IActionResult> List(
+        int year, int month, int? limit, int? offset, Guid? categoryId, DateOnly? on,
+        CancellationToken ct) =>
+        Ok(await expenses.ListAsync(year, month, limit, offset, categoryId, on, ct));
 
     /// <summary>Thêm một giao dịch.</summary>
     [HttpPost]
@@ -92,6 +99,15 @@ public sealed class ExpensesController(ExpensesService expenses) : ControllerBas
     [HttpGet("summary/categories")]
     public async Task<IActionResult> SpendByCategory(int year, int month, CancellationToken ct) =>
         Ok(await expenses.SpendByCategoryAsync(year, month, ct));
+
+    /// <summary>Chi theo từng danh mục theo TỪNG NGÀY trong một tháng.</summary>
+    /// <remarks>
+    /// Dùng cho cảnh báo vượt hạn mức ngày. Trước đây trình duyệt tự cộng từ danh sách cả
+    /// tháng; nay danh sách đã phân trang nên phải cộng ở nơi còn đủ dữ liệu.
+    /// </remarks>
+    [HttpGet("summary/days")]
+    public async Task<IActionResult> SpendByDay(int year, int month, CancellationToken ct) =>
+        Ok(await expenses.DayTotalsAsync(year, month, ct));
 
     /// <summary>Tổng chi từng tháng trong một năm.</summary>
     /// <remarks>Đọc từ view `v_expense_month_total`.</remarks>

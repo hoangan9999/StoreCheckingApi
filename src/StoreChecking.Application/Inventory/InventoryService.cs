@@ -25,6 +25,9 @@ public sealed class InventoryService(
     /// <summary>Upper bound on the global sale history. The client asks for 300.</summary>
     private const int MaxSaleHistory = 5_000;
 
+    /// <summary>Orders per page when the client does not ask for a size.</summary>
+    private const int DefaultSalePage = 20;
+
     /// <summary>Unranked batches sort after every ranked one.</summary>
     private const int Unranked = int.MaxValue;
 
@@ -245,17 +248,30 @@ public sealed class InventoryService(
 
     // ---------- Sales ----------
 
-    public async Task<IReadOnlyList<SaleRowDto>> ListSalesAsync(int? limit, CancellationToken ct = default)
+    /// <summary>
+    /// A page of sales history. <paramref name="limit"/> counts ORDERS, not rows.
+    /// <para><paramref name="from"/> and <paramref name="to"/> are instants, and the client
+    /// works them out: "today" means today in Ho Chi Minh City, and only the browser knows
+    /// that. Passing a bare date would leave the server guessing at a timezone.</para>
+    /// </summary>
+    public async Task<SalesPageDto> ListSalesAsync(
+        int? limit, int? offset, DateTimeOffset? from, DateTimeOffset? to,
+        CancellationToken ct = default)
     {
-        var take = limit is null or < 1 ? 300 : Math.Min(limit.Value, MaxSaleHistory);
-        var rows = await sales.ListAllAsync(take, ct);
+        var take = limit is null or < 1 ? DefaultSalePage : Math.Min(limit.Value, MaxSaleHistory);
+        var skip = Math.Max(offset ?? 0, 0);
 
-        return rows
+        var (orders, amount) = await sales.SummariseAsync(from, to, ct);
+        var rows = await sales.ListPageAsync(skip, take, from, to, ct);
+
+        var items = rows
             .Select(r => new SaleRowDto(
                 r.Sale.Id, r.Sale.ProductId, r.Sale.BatchId, r.Sale.Quantity, r.Sale.SellPrice,
                 r.Sale.ShippingFee, r.Sale.Note, r.Sale.SaleGroupId, r.Sale.SoldAt,
                 r.ProductName, r.BatchName, r.BatchPriority))
             .ToList();
+
+        return new SalesPageDto(orders, amount, take, skip, items);
     }
 
     /// <returns><c>null</c> when no such batch belongs to the current user.</returns>
