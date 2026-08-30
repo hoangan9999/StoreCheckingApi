@@ -11,6 +11,45 @@ Chuyển backend từ **Supabase** sang **.NET 9 + PostgreSQL tự dựng trên 
 
 ---
 
+## ⚠️ CHỖ CHẠY ĐÃ ĐỔI — 2026-08-30
+
+**Không còn chạy trên NAS.** Cụm này nay chạy trên **laptop cá nhân**
+(`C:\Packing\StoreCheckingApi`, Docker Desktop).
+
+Lý do: NAS là **DS124, 1GB RAM hàn chết**. Chạy PostgreSQL + API .NET + hai Tailscale +
+watchtower + solar + nas-uploader trên đó đã kéo sập cả máy **ba lần trong một tiếng**.
+Lần nặng nhất mất luôn giao diện DSM — ping vẫn thông mà không dịch vụ nào trả lời. Và
+trước đó Container Manager còn tự dừng một đêm. Đây không phải chuyện chỉnh số cho khéo:
+chỗ đó không đủ chỗ. NAS nay chỉ còn giữ `nas-uploader`.
+
+`hoangancloud` trong tailnet **chính là con NAS đó** (đã đối chiếu: cùng trả về một nội
+dung ở cổng 5000 qua cả LAN lẫn tailnet). Không có máy Linux nào khác luôn bật.
+
+**Địa chỉ không đổi:** vẫn `storechecking.tail631d54.ts.net`, vì container Tailscale giữ
+nguyên hostname `storechecking`, chỉ chạy ở máy khác. App trên Vercel không phải sửa gì.
+
+### Dựng lại từ đầu trên một máy mới
+
+1. Xoá node `storechecking` cũ trong Tailscale admin — không xoá thì node mới bị đặt tên
+   `storechecking-1` và địa chỉ đổi.
+2. Tạo auth key mới, chép `.env.example` thành `.env` rồi điền.
+3. `.\tools\restore-and-start.ps1` — nạp `backup.sql` vào database RỖNG rồi dựng cả cụm.
+   Phải rỗng vì `db/*.sql` chạy trước sẽ tạo sẵn bảng và `CREATE TABLE` trong dump sẽ đổ.
+   **Không thể chép thẳng thư mục dữ liệu Postgres** giữa NAS (ARM64) và máy này (x86).
+
+### Bảo đảm "máy bật thì backend chạy"
+
+- Docker Desktop: `autoStart = true`, RAM cấp cho VM nâng 2GB → 6GB
+  (`%APPDATA%\Docker\settings.json`).
+- `tools/keep-backend-up.ps1 -Loop` canh mỗi 5 phút: Docker chết thì bật lại, container
+  thiếu thì `docker compose up -d`. Chạy qua lối tắt trong thư mục Startup
+  (`storechecking-backend.vbs`) — **tác vụ theo lịch của Windows cần quyền quản trị nên
+  không dùng được**. Log ở `%LOCALAPPDATA%\storechecking-keepalive.log`.
+- Cần thiết vì Docker Desktop đã tự tắt **ba lần** trong một buổi chiều. Riêng
+  `restart: unless-stopped` không cứu được: Docker chết thì không còn ai bật lại.
+
+---
+
 ## 📌 ĐANG Ở ĐÂU — cập nhật 2026-08-29
 
 **Cuộc migrate đã XONG.** Backend, dữ liệu, Angular đều đã cắt sang; code Supabase cũ đã
@@ -228,7 +267,14 @@ trigger cũng ra 400 kèm nguyên câu tiếng Việt của nó chứ không ph�
   ngã ngay lúc dựng truy vấn: *"No coercion operator is defined between types 'JsonDocument'
   and 'JsonElement?'"*. Cách đúng: chiếu cột ra trước (`.Select(x => new { x.Id, x.Data })`)
   rồi lấy `RootElement` trong bộ nhớ. Dựng object thường (ngoài LINQ) thì vẫn dùng được.
-- **Thư mục bind mount phải có sẵn trên NAS.** Container Manager của Synology không tự
+- **`bin/` và `obj/` trong `.dockerignore` PHẢI viết `**/bin/`.** Không có `**/` thì chỉ
+  khớp thư mục ở gốc, `src/*/obj` vẫn lọt vào build context — mang theo
+  `project.assets.json` trỏ đường dẫn Visual Studio, và ảnh build đổ với *"Unable to find
+  fallback package folder 'C:\Program Files (x86)\...'"*. CI không bao giờ dính vì máy CI
+  không có `obj` sẵn; chỉ máy đã build tại chỗ mới gặp — tức đúng máy nay là chỗ chạy chính.
+- ~~**Thư mục bind mount phải có sẵn trên NAS.**~~ Không còn áp dụng: `pgdata` và `ts-state`
+  đã chuyển sang named volume. Bind mount là thứ Postgres không chịu được trên Windows.
+  Ghi chú cũ: Container Manager của Synology không tự
   tạo như Docker trên Linux — thiếu là container chết với `Bind mount failed`. Thư mục dữ
   liệu nào cũng phải ship kèm một file `.gitkeep`.
 - **KHÔNG build .NET trên NAS.** Đã bỏ hẳn — xem mục Deploy. Đo thật: lúc đang build,
