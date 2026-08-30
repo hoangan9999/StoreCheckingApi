@@ -50,8 +50,16 @@ public interface IGeneratedVideoRepository
 
     Task<GeneratedVideo?> FindAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>Video dựng trước mốc này — dùng cho việc tự dọn hằng ngày.</summary>
+    Task<IReadOnlyList<GeneratedVideo>> ListOlderThanAsync(
+        DateTimeOffset cutoff, CancellationToken ct = default);
+
+    /// <summary>Tên file của mọi video còn được nhận — để nhận ra file mồ côi trên đĩa.</summary>
+    Task<IReadOnlyList<string>> ListFilenamesAsync(CancellationToken ct = default);
+
     void Add(GeneratedVideo row);
     void Remove(GeneratedVideo row);
+    void RemoveRange(IEnumerable<GeneratedVideo> rows);
 }
 
 /// <summary>
@@ -79,4 +87,11 @@ public interface IMediaStorage
 
     void DeleteImage(string filename);
     void DeleteVideo(string filename);
+
+    /// <summary>
+    /// Tên mọi file video đang nằm trên đĩa.
+    /// <para>Dùng để tìm file mồ côi — file có mà không dòng nào trỏ tới. Xảy ra khi ffmpeg
+    /// ghép xong nhưng lưu dòng thất bại: không ai xoá thì nó nằm đó chiếm chỗ vĩnh viễn.</para>
+    /// </summary>
+    IReadOnlyList<string> ListVideoFiles();
 }

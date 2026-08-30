@@ -182,6 +182,57 @@ public sealed class MediaService(
         return removed;
     }
 
+    /// <summary>
+    /// Xoá video dựng quá <paramref name="keepDays"/> ngày, kèm file của chúng.
+    ///
+    /// <para>Ngày nào cũng có năm video mới, nên video cũ không còn giá trị gì — và không ai
+    /// dọn thì mỗi tháng thêm khoảng một GB nằm lại trên đĩa. Xoá bất kể đã tải hay chưa:
+    /// một video năm ngày tuổi chưa đụng tới thì cũng sẽ không bao giờ đụng tới nữa.</para>
+    ///
+    /// <para>Quét cả file mồ côi — file có trên đĩa mà không dòng nào trỏ tới, xảy ra khi
+    /// ffmpeg ghép xong nhưng lưu dòng thất bại. Chỉ đụng tới file đã quá hạn, nên một video
+    /// đang ghép dở (tính bằng phút) không bao giờ nằm trong tầm ngắm.</para>
+    /// </summary>
+    public async Task<(int Rows, int Orphans)> CleanupOldVideosAsync(
+        int keepDays, CancellationToken ct = default)
+    {
+        if (keepDays < 1) return (0, 0);
+
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-keepDays);
+        var old = await videos.ListOlderThanAsync(cutoff, ct);
+
+        var files = old.Select(v => v.Filename).OfType<string>().ToList();
+
+        if (old.Count > 0)
+        {
+            videos.RemoveRange(old);
+            await uow.SaveChangesAsync(ct);
+
+            // Xoá file SAU khi dòng đã đi. Ngược lại thì lưu thất bại sẽ để lại dòng trỏ vào
+            // hư không, và một danh sách có video bấm vào không mở được thì khó chịu hơn là
+            // một file thừa nằm im.
+            foreach (var f in files) storage.DeleteVideo(f);
+        }
+
+        // File mồ côi: có trên đĩa, không dòng nào nhận.
+        var known = (await videos.ListFilenamesAsync(ct)).ToHashSet(StringComparer.Ordinal);
+
+        var orphans = 0;
+        foreach (var name in storage.ListVideoFiles())
+        {
+            if (known.Contains(name)) continue;
+
+            var path = storage.VideoPath(name);
+            if (File.Exists(path) && File.GetLastWriteTimeUtc(path) < cutoff.UtcDateTime)
+            {
+                storage.DeleteVideo(name);
+                orphans++;
+            }
+        }
+
+        return (old.Count, orphans);
+    }
+
     // ---------- Dựng video ----------
 
     /// <summary>How many more are still owed today.</summary>

@@ -47,6 +47,12 @@ public sealed class DiskMediaStorage : IMediaStorage
     public void DeleteImage(string filename) => Delete(_images, filename);
     public void DeleteVideo(string filename) => Delete(_videos, filename);
 
+    public IReadOnlyList<string> ListVideoFiles()
+    {
+        try { return Directory.GetFiles(_videos).Select(Path.GetFileName).OfType<string>().ToList(); }
+        catch { return []; }
+    }
+
     private static async Task<string> SaveAsync(
         string dir, Stream content, string extension, CancellationToken ct)
     {

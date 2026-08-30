@@ -127,6 +127,17 @@ public sealed class GeneratedVideoRepository(AppDbContext db) : IGeneratedVideoR
     public Task<GeneratedVideo?> FindAsync(Guid id, CancellationToken ct = default) =>
         db.GeneratedVideos.FirstOrDefaultAsync(x => x.Id == id, ct);
 
+    public async Task<IReadOnlyList<GeneratedVideo>> ListOlderThanAsync(
+        DateTimeOffset cutoff, CancellationToken ct = default) =>
+        await db.GeneratedVideos.Where(x => x.CreatedAt < cutoff).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<string>> ListFilenamesAsync(CancellationToken ct = default) =>
+        await db.GeneratedVideos
+            .Where(x => x.Filename != null)
+            .Select(x => x.Filename!)
+            .ToListAsync(ct);
+
     public void Add(GeneratedVideo row) => db.GeneratedVideos.Add(row);
     public void Remove(GeneratedVideo row) => db.GeneratedVideos.Remove(row);
+    public void RemoveRange(IEnumerable<GeneratedVideo> rows) => db.GeneratedVideos.RemoveRange(rows);
 }

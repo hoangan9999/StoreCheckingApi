@@ -19,6 +19,7 @@ public sealed class DailyVideoService(
     VideoJobQueue queue,
     ILogger<DailyVideoService> log,
     int[] slots,
+    int keepVideoDays,
     bool enabled) : BackgroundService
 {
     /// <summary>How often to look. Cheap: one count query when there is nothing to do.</summary>
@@ -93,11 +94,35 @@ public sealed class DailyVideoService(
     /// </summary>
     private async Task RunDailyAsync(CancellationToken ct)
     {
+        await CleanupAsync(ct);
+
         var vnNow = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.UtcNow, "Asia/Ho_Chi_Minh");
         var due = slots.Count(h => vnNow.Hour >= h);
         if (due == 0) return;
 
         await GenerateAsync(null, $"theo lịch — đã qua {due} khung giờ", ct, due);
+    }
+
+    /// <summary>
+    /// Dọn video quá hạn. Chạy cùng lượt kiểm định kỳ vì nó rẻ khi không có gì để dọn:
+    /// một câu truy vấn theo mốc thời gian, thường trả về rỗng.
+    /// </summary>
+    private async Task CleanupAsync(CancellationToken ct)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var sp = scope.ServiceProvider;
+
+        var owner = await sp.GetRequiredService<IMediaImageRepository>().FindOwnerAsync(ct);
+        if (owner is null) return;
+
+        sp.GetRequiredService<ScopeUser>().RunAs(owner.Value);
+
+        var (rows, orphans) = await sp.GetRequiredService<MediaService>()
+            .CleanupOldVideosAsync(keepVideoDays, ct);
+
+        if (rows > 0 || orphans > 0)
+            log.LogInformation("Đã dọn {Rows} video quá {Days} ngày và {Orphans} file mồ côi.",
+                rows, keepVideoDays, orphans);
     }
 
     /// <summary>

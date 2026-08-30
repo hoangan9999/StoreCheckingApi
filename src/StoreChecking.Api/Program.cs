@@ -69,12 +69,16 @@ var slots = (builder.Configuration["Media:Slots"] ?? "7,11,14,17,20")
     .OrderBy(h => h)
     .ToArray();
 
+// Giữ video bao nhiêu ngày rồi tự xoá. Ngày nào cũng có năm cái mới nên video cũ hết giá
+// trị nhanh, mà không dọn thì mỗi tháng thêm khoảng một GB nằm lại.
+var keepVideoDays = builder.Configuration.GetValue<int?>("Media:KeepVideoDays") ?? 5;
+
 builder.Services.AddSingleton<VideoJobQueue>();
 builder.Services.AddHostedService(sp => new DailyVideoService(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<VideoJobQueue>(),
     sp.GetRequiredService<ILogger<DailyVideoService>>(),
-    slots, dailyVideos));
+    slots, Math.Max(keepVideoDays, 1), dailyVideos));
 
 // Repositories, unit of work and the application services all come from one place.
 // Khoảng cách giữa hai lần hâm nóng database. Đặt Warmup:IntervalSeconds = 0 để tắt.
