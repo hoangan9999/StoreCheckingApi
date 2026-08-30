@@ -1,0 +1,235 @@
+using StoreChecking.Application.Abstractions;
+using StoreChecking.Domain.Entities;
+
+namespace StoreChecking.Application.Media;
+
+public record MediaImageDto(
+    Guid Id, string Filename, string OriginalName, long Bytes,
+    int UseCount, DateTimeOffset UploadedAt);
+
+public record GeneratedVideoDto(
+    Guid Id, string? Filename, string Title, string Script, decimal? DurationSec,
+    long? Bytes, string Status, string? Error, DateOnly BatchDay,
+    DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt);
+
+public record DayCountDto(DateOnly Day, int Count);
+
+public record MediaPage<T>(int Total, int Limit, int Offset, IReadOnlyList<T> Items);
+
+/// <summary>
+/// The album, and the daily job that turns it into videos.
+///
+/// <para>Pictures in, five videos out, nobody watching. Each video is written by the AI from
+/// the pictures themselves, read by the Adam voice, and assembled by ffmpeg.</para>
+/// </summary>
+public sealed class MediaService(
+    IMediaImageRepository images,
+    IGeneratedVideoRepository videos,
+    IMediaStorage storage,
+    IScriptWriter writer,
+    IVoiceSynthesizer voice,
+    IVideoRenderer renderer,
+    IUnitOfWork uow,
+    ICurrentUser user)
+{
+    /// <summary>Pictures per video. The ask was 10-15; the exact number is picked per video.</summary>
+    private const int MinPerVideo = 10;
+    private const int MaxPerVideo = 15;
+
+    /// <summary>Videos a day.</summary>
+    public const int PerDay = 5;
+
+    private const int DefaultPage = 60;
+    private const int MaxPage = 300;
+
+    private static DateOnly Today() =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(
+            DateTimeOffset.UtcNow, "Asia/Ho_Chi_Minh").DateTime);
+
+    // ---------- Kho ảnh ----------
+
+    public async Task<MediaImageDto> AddImageAsync(
+        Stream content, string originalName, string contentType, CancellationToken ct = default)
+    {
+        var ext = Path.GetExtension(originalName);
+        if (string.IsNullOrWhiteSpace(ext)) ext = contentType.Contains("png") ? ".png" : ".jpg";
+
+        var filename = await storage.SaveImageAsync(content, ext, ct);
+
+        var row = new MediaImage
+        {
+            UserId = user.Id,
+            Filename = filename,
+            OriginalName = (originalName ?? "").Trim(),
+            ContentType = contentType,
+            Bytes = 0,
+        };
+
+        // Size read back from disk rather than from the upload header: a client can claim
+        // any length it likes, and what matters later is what actually landed.
+        if (storage.ImagePath(filename) is { } path) row.Bytes = new FileInfo(path).Length;
+
+        images.Add(row);
+        await uow.SaveChangesAsync(ct);
+
+        return ToDto(row);
+    }
+
+    public async Task<MediaPage<MediaImageDto>> ListImagesAsync(
+        DateOnly? day, int? limit, int? offset, CancellationToken ct = default)
+    {
+        var take = limit is null or < 1 ? DefaultPage : Math.Min(limit.Value, MaxPage);
+        var skip = Math.Max(offset ?? 0, 0);
+
+        var (total, rows) = await images.ListAsync(day, skip, take, ct);
+        return new MediaPage<MediaImageDto>(total, take, skip, rows.Select(ToDto).ToList());
+    }
+
+    public async Task<IReadOnlyList<DayCountDto>> ImageDaysAsync(CancellationToken ct = default) =>
+        (await images.CountByDayAsync(ct)).Select(r => new DayCountDto(r.Day, r.Count)).ToList();
+
+    public async Task<bool> DeleteImageAsync(Guid id, CancellationToken ct = default)
+    {
+        var row = await images.FindAsync(id, ct);
+        if (row is null) return false;
+
+        images.Remove(row);
+        await uow.SaveChangesAsync(ct);
+
+        // File removed only after the row is gone. The other order can leave a row pointing
+        // at nothing if the save fails, and a listing that shows broken pictures is worse
+        // than a file nobody references.
+        storage.DeleteImage(row.Filename);
+        return true;
+    }
+
+    public Stream? OpenImage(string filename) => storage.OpenImage(filename);
+    public Stream? OpenVideo(string filename) => storage.OpenVideo(filename);
+
+    // ---------- Kho video ----------
+
+    public async Task<MediaPage<GeneratedVideoDto>> ListVideosAsync(
+        DateOnly? day, int? limit, int? offset, CancellationToken ct = default)
+    {
+        var take = limit is null or < 1 ? DefaultPage : Math.Min(limit.Value, MaxPage);
+        var skip = Math.Max(offset ?? 0, 0);
+
+        var (total, rows) = await videos.ListAsync(day, skip, take, ct);
+        return new MediaPage<GeneratedVideoDto>(total, take, skip, rows.Select(ToDto).ToList());
+    }
+
+    public async Task<IReadOnlyList<DayCountDto>> VideoDaysAsync(CancellationToken ct = default) =>
+        (await videos.CountByDayAsync(ct)).Select(r => new DayCountDto(r.Day, r.Count)).ToList();
+
+    public async Task<GeneratedVideoDto?> FindVideoAsync(Guid id, CancellationToken ct = default) =>
+        await videos.FindAsync(id, ct) is { } row ? ToDto(row) : null;
+
+    public async Task<bool> DeleteVideoAsync(Guid id, CancellationToken ct = default)
+    {
+        var row = await videos.FindAsync(id, ct);
+        if (row is null) return false;
+
+        videos.Remove(row);
+        await uow.SaveChangesAsync(ct);
+
+        if (row.Filename is { } f) storage.DeleteVideo(f);
+        return true;
+    }
+
+    // ---------- Dựng video ----------
+
+    /// <summary>How many more are still owed today.</summary>
+    public async Task<int> RemainingTodayAsync(CancellationToken ct = default) =>
+        Math.Max(PerDay - await videos.CountForDayAsync(Today(), ct), 0);
+
+    /// <summary>
+    /// Builds one video, start to finish.
+    ///
+    /// <para>The row is written BEFORE the work starts and its status moves stage by stage.
+    /// A crash then leaves a row saying exactly how far it got, instead of nothing at all —
+    /// and "voicing" versus "rendering" are two very different things to go and fix.</para>
+    /// </summary>
+    public async Task<GeneratedVideoDto> GenerateOneAsync(CancellationToken ct = default)
+    {
+        var count = Random.Shared.Next(MinPerVideo, MaxPerVideo + 1);
+        var picked = await images.PickLeastUsedAsync(count, ct);
+
+        if (picked.Count < MinPerVideo)
+            throw new InvalidOperationException(
+                $"Kho ảnh chỉ có {picked.Count} ảnh, cần ít nhất {MinPerVideo} để dựng một video.");
+
+        var row = new GeneratedVideo
+        {
+            UserId = user.Id,
+            Status = VideoStatus.Writing,
+            ImageIds = picked.Select(p => p.Id).ToArray(),
+            BatchDay = Today(),
+        };
+        videos.Add(row);
+        await uow.SaveChangesAsync(ct);
+
+        var audio = Path.Combine(Path.GetTempPath(), $"voice-{row.Id:N}.mp3");
+
+        try
+        {
+            var paths = picked
+                .Select(p => storage.ImagePath(p.Filename))
+                .OfType<string>()
+                .ToList();
+
+            if (paths.Count < MinPerVideo)
+                throw new InvalidOperationException("Một số ảnh có trong danh sách nhưng mất file trên đĩa.");
+
+            var script = await writer.WriteAsync(paths, ct);
+            row.Title = script.Title;
+            row.Script = script.Script;
+
+            row.Status = VideoStatus.Voicing;
+            await uow.SaveChangesAsync(ct);
+            await voice.SpeakToFileAsync(script.Script, audio, ct);
+
+            row.Status = VideoStatus.Rendering;
+            await uow.SaveChangesAsync(ct);
+
+            var name = $"video-{row.Id:N}.mp4";
+            var outPath = storage.VideoPath(name);
+            row.DurationSec = await renderer.RenderAsync(paths, audio, outPath, ct);
+
+            row.Filename = name;
+            row.Bytes = new FileInfo(outPath).Length;
+            row.Status = VideoStatus.Ready;
+            row.FinishedAt = DateTimeOffset.UtcNow;
+
+            // Counted only once the video exists. Bumping it earlier would push pictures to
+            // the back of the queue for a video that never got made.
+            foreach (var p in picked)
+            {
+                p.UseCount++;
+                p.LastUsedAt = DateTimeOffset.UtcNow;
+            }
+
+            await uow.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            row.Status = VideoStatus.Error;
+            row.Error = ex.Message.Length <= 500 ? ex.Message : ex.Message[..500];
+            row.FinishedAt = DateTimeOffset.UtcNow;
+            await uow.SaveChangesAsync(CancellationToken.None);
+
+            // Ném tiếp để bên gọi biết; chặng hỏng đã ghi vào `status` và `error` của dòng,
+            // còn chi tiết kỹ thuật thì Gemini/giọng đọc/ffmpeg đã tự ghi log ở tầng dưới.
+            throw;
+        }
+        finally { try { File.Delete(audio); } catch { /* file tạm */ } }
+
+        return ToDto(row);
+    }
+
+    private static MediaImageDto ToDto(MediaImage r) =>
+        new(r.Id, r.Filename, r.OriginalName, r.Bytes, r.UseCount, r.UploadedAt);
+
+    private static GeneratedVideoDto ToDto(GeneratedVideo r) =>
+        new(r.Id, r.Filename, r.Title, r.Script, r.DurationSec, r.Bytes,
+            r.Status, r.Error, r.BatchDay, r.CreatedAt, r.FinishedAt);
+}

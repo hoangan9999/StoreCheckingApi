@@ -10,6 +10,9 @@
     <!-- BackgroundService, cho tiến trình hâm nóng database. Bản Abstractions thôi: tầng
          này không tự dựng host, nó chỉ cung cấp một dịch vụ nền cho API dựng. -->
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
+    <!-- IHttpClientFactory: gọi Gemini và gọi giọng đọc. Dùng factory chứ không tự new
+         HttpClient, để không rơi vào cạn kiệt socket khi gọi đều đặn mỗi ngày. -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.2" />
   </ItemGroup>

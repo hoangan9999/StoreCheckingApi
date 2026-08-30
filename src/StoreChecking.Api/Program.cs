@@ -60,8 +60,13 @@ var warmupSeconds = builder.Configuration.GetValue<int?>("Warmup:IntervalSeconds
 // Nơi chứa ảnh tải lên và video tự sinh. Mặc định hợp với volume khai trong compose.
 var mediaRoot = builder.Configuration["Media:Root"] ?? "/data/media";
 
+// Khoá AI và địa chỉ giọng đọc. Thiếu thì API vẫn chạy bình thường — chỉ việc dựng video
+// hằng đêm là không làm được, và nó sẽ ghi rõ lý do vào log thay vì chặn cả máy chủ khởi động.
+var geminiKey = builder.Configuration["Media:GeminiApiKey"] ?? "";
+var ttsUrl = builder.Configuration["Media:TtsUrl"] ?? "http://host.docker.internal:5050/";
+
 builder.Services.AddInfrastructure(
-    connString, TimeSpan.FromSeconds(Math.Max(warmupSeconds, 0)), mediaRoot);
+    connString, TimeSpan.FromSeconds(Math.Max(warmupSeconds, 0)), mediaRoot, geminiKey, ttsUrl);
 builder.Services.AddSingleton<LastRequestClock>();
 
 builder.Services.AddControllers();

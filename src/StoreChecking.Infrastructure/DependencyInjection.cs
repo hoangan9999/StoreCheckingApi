@@ -27,7 +27,7 @@ public static class DependencyInjection
     /// </param>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services, string connectionString, TimeSpan warmupInterval,
-        string mediaRoot)
+        string mediaRoot, string geminiApiKey, string ttsUrl)
     {
         // Pool settings applied before anything else sees the string, so the migrator and
         // the DbContext agree on how connections are kept.
@@ -50,6 +50,20 @@ public static class DependencyInjection
         // mục một lần lúc khởi động, không giữ trạng thái nào theo từng request.
         services.AddSingleton<IMediaStorage>(sp => new StoreChecking.Infrastructure.Media.DiskMediaStorage(
             mediaRoot, sp.GetRequiredService<ILogger<StoreChecking.Infrastructure.Media.DiskMediaStorage>>()));
+
+        // Dây chuyền dựng video: AI viết -> giọng đọc -> ffmpeg ghép.
+        services.AddHttpClient();
+        services.AddSingleton<IVideoRenderer>(sp => new StoreChecking.Infrastructure.Media.FfmpegVideoRenderer(
+            sp.GetRequiredService<ILogger<StoreChecking.Infrastructure.Media.FfmpegVideoRenderer>>()));
+        services.AddSingleton<IVoiceSynthesizer>(sp => new StoreChecking.Infrastructure.Media.AdamVoice(
+            sp.GetRequiredService<IHttpClientFactory>(),
+            sp.GetRequiredService<ILogger<StoreChecking.Infrastructure.Media.AdamVoice>>(),
+            ttsUrl));
+        services.AddSingleton<IScriptWriter>(sp => new StoreChecking.Infrastructure.Media.GeminiScriptWriter(
+            sp.GetRequiredService<IHttpClientFactory>(),
+            sp.GetRequiredService<IVideoRenderer>(),
+            sp.GetRequiredService<ILogger<StoreChecking.Infrastructure.Media.GeminiScriptWriter>>(),
+            geminiApiKey));
 
         // ---------- Repositories ----------
         services.AddScoped<IWorkDayRepository, WorkDayRepository>();
@@ -74,6 +88,7 @@ public static class DependencyInjection
         // Registered here rather than in a separate AddApplication(): they have no
         // configuration of their own, and one list is easier to keep complete than two.
         services.AddScoped<WorkCalendarService>();
+        services.AddScoped<StoreChecking.Application.Media.MediaService>();
         services.AddScoped<EnglishService>();
         services.AddScoped<NotesService>();
         services.AddScoped<PackingService>();
