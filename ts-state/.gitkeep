@@ -1,7 +1,0 @@
-Keeps this folder in git so the deploy package ships it.
-
-Tailscale stores this node's identity here. Losing it makes the machine re-register as a
-new node with a different hostname, which breaks the URL the app calls.
-
-Synology's Container Manager does not auto-create bind mount folders, so the folder has
-to exist before the first build.

@@ -25,6 +25,12 @@ public static class ConnectionTuning
 
         if (!b.ContainsKey("Minimum Pool Size")) b.MinPoolSize = WarmConnections;
 
+        // Npgsql mặc định cho tối đa 100 kết nối, trong khi PostgreSQL trên máy này chỉ
+        // nhận 20 (xem docker-compose.yml) và mỗi kết nối là một tiến trình riêng. Để
+        // nguyên mặc định thì khi có tải, pool sẽ mở tới lúc database từ chối — nên trần
+        // ở đây phải nằm dưới trần bên kia.
+        if (!b.ContainsKey("Maximum Pool Size")) b.MaxPoolSize = 10;
+
         // 0 = never close an idle connection. Safe because the pool checks a connection
         // before handing it out and replaces a dead one, and because the warm-up service
         // exercises the pool every few minutes, which finds a broken connection before

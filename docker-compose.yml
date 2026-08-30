@@ -8,6 +8,22 @@
 # Port 8140 was picked to avoid the services already running on this NAS:
 #   8130 = solar-web, 8123 = home assistant (disabled), 1883 = mqtt
 
+# ---------------------------------------------------------------------------
+#  GIỚI HẠN BỘ NHỚ — đọc trước khi sửa
+#
+#  Máy này là DS124: 1GB RAM, hàn chết, không nâng cấp được. Nó đã sập hai lần
+#  trong một tiếng vì cạn bộ nhớ — lần thứ hai kéo sập cả giao diện DSM, ping
+#  vẫn thông mà không dịch vụ nào còn trả lời.
+#
+#  `mem_limit` ở đây KHÔNG phải để tiết kiệm. Nó để đổi kiểu hỏng: container
+#  nào vượt mức thì chính nó bị hạ, thay vì hệ điều hành đi tìm tiến trình to
+#  nhất mà giết — và tiến trình to nhất thường là thứ đang giữ cả NAS chạy.
+#  Hỏng một container thì khởi động lại được; hỏng DSM thì phải tới tận nơi.
+#
+#  Tổng mức trần của cụm này ~640MB. Trên máy còn phải nuôi DSM, solar và
+#  nas-uploader, nên nếu vẫn sập thì phải BỚT thứ chạy, không phải chỉnh số.
+# ---------------------------------------------------------------------------
+
 x-logging: &default-logging
   driver: json-file
   options:
@@ -26,8 +42,25 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       # C collation: faster and stable, and does not depend on the host locale
       POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    # Trần bộ nhớ + cấu hình cho máy nhỏ. Mặc định của Postgres nhắm tới máy chủ
+    # thật: shared_buffers 128MB và tối đa 100 kết nối, mỗi kết nối là một tiến
+    # trình riêng. Trên 1GB thì chỉ riêng chỗ đó đã đủ gây hoạ.
+    mem_limit: 224m
+    command: >
+      postgres
+      -c shared_buffers=32MB
+      -c max_connections=20
+      -c work_mem=2MB
+      -c maintenance_work_mem=24MB
+      -c effective_cache_size=96MB
+      -c max_worker_processes=2
+      -c max_parallel_workers=0
+      -c max_parallel_workers_per_gather=0
     volumes:
-      - ./pgdata:/var/lib/postgresql/data
+      # Named volume, không phải thư mục trên máy. Bind mount là thứ Postgres không chịu
+      # được trên Windows: chủ sở hữu và quyền của thư mục Windows không ánh xạ sang được,
+      # initdb bỏ cuộc ngay. Named volume để Docker tự quản, chạy giống nhau ở mọi máy.
+      - pgdata:/var/lib/postgresql/data
       # Postgres runs the .sql files here automatically, but only while the volume is empty.
       - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -52,6 +85,7 @@ services:
     container_name: storechecking-api
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 256m
     labels:
       # Watchtower only touches containers carrying this scope, so the other apps on this
       # NAS (solar, nas-uploader) are never restarted behind your back.
@@ -66,6 +100,12 @@ services:
       # Origins allowed to call this API, comma separated.
       Cors__Origins: ${CORS_ORIGINS}
       ASPNETCORE_ENVIRONMENT: Production
+
+      # .NET đọc được trần của container và tự co heap theo. Hai biến dưới đây
+      # đẩy nó đi xa hơn nữa: gom rác chăm hơn, giữ ít bộ nhớ dự trữ hơn — đánh
+      # đổi chút CPU lấy chỗ trống, đúng thứ máy này thiếu.
+      DOTNET_gcServer: "0"
+      DOTNET_GCConserveMemory: "7"
       # The API applies db/*.sql itself at startup. Set SCHEMA_AUTOMIGRATE=false in .env
       # to switch that off — the escape hatch for getting the API up while the schema is
       # being sorted out by hand. Declared here because .env only substitutes into this
@@ -83,10 +123,15 @@ services:
   # That file holds a secret: it is created by hand on the NAS and never committed.
   # Docker turns a missing bind-mount source into a DIRECTORY, which silently breaks the
   # login, so create the file BEFORE starting this project.
+  # Nếu NAS còn sập vì bộ nhớ thì XOÁ HẲN service này trước tiên: nó chỉ để tự
+  # động cập nhật ảnh. Bỏ đi thì mỗi lần deploy phải vào Container Manager kéo
+  # ảnh mới và khởi động lại bằng tay — đổi lại bớt một tiến trình thường trú và
+  # bớt nguy cơ nó kéo ảnh về đúng lúc máy đang chật.
   watchtower:
     image: containrrr/watchtower:latest
     container_name: storechecking-watchtower
     restart: unless-stopped
+    mem_limit: 64m
     logging: *default-logging
     labels:
       com.centurylinklabs.watchtower.scope: storechecking
@@ -120,6 +165,7 @@ services:
     container_name: storechecking-ts
     hostname: storechecking            # decides the URL: storechecking.<tailnet>.ts.net
     restart: unless-stopped
+    mem_limit: 96m
     logging: *default-logging
     depends_on:
       - api
@@ -129,7 +175,14 @@ services:
       - TS_USERSPACE=true
       - TS_SERVE_CONFIG=/config/serve.json
     volumes:
-      - ./ts-state:/var/lib/tailscale
+      # Danh tính của node trên tailnet. Named volume vì cùng lý do với pgdata — và tuyệt
+      # đối KHÔNG chép từ máy cũ sang: hai máy dùng chung một danh tính thì Tailscale coi
+      # là một node, và chúng sẽ đá nhau ra khỏi mạng.
+      - ts-state:/var/lib/tailscale
       - ./ts-config:/config:ro
     cap_add:
       - NET_ADMIN
+
+volumes:
+  pgdata:
+  ts-state:

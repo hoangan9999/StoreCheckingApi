@@ -1,6 +1,21 @@
-bin/
-obj/
-pgdata/
+# LƯU Ý CÚ PHÁP: `bin/` chỉ khớp thư mục bin Ở GỐC, không khớp src/*/bin. Phải có `**/`
+# mới khớp mọi tầng. Thiếu dấu đó thì obj/ của lần build trên Windows lọt vào build
+# context, và bên trong nó có project.assets.json trỏ tới đường dẫn Visual Studio — ảnh
+# build hỏng với lỗi "Unable to find fallback package folder 'C:\Program Files (x86)\...'".
+# CI không dính vì máy CI không có obj sẵn; chỉ máy đã build tại chỗ mới gặp.
+**/bin/
+**/obj/
+**/.vs/
+
+# Dữ liệu và bí mật — không bao giờ đưa vào ảnh.
 .env
+pgdata/
+ts-state/
+_migration/
+backup.sql
+*.dump
+
 .git/
+.github/
 tests/
+tools/

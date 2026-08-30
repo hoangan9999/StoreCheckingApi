@@ -6,16 +6,6 @@ obj/
 # Secrets and data — NEVER commit
 .env
 
-# Keep the pgdata folder itself but never its contents: Synology's Container Manager
-# refuses to auto-create bind mount folders, so an empty folder has to ship with the
-# deploy package.
-pgdata/*
-!pgdata/.gitkeep
-
-# Tailscale node identity — same reasoning: ship the folder, never its contents.
-ts-state/*
-!ts-state/.gitkeep
-
 # Watchtower's GHCR credentials. config.json holds a real token — never commit it.
 # Ship the folder and the example only.
 watchtower/*
@@ -28,3 +18,9 @@ watchtower/*
 
 # Dumps pulled out of Supabase — production data, never commit.
 _migration/
+
+# Bản kết xuất database — dữ liệu thật. Chỉ chặn ở gốc repo: db/*.sql là file
+# schema và PHẢI được theo dõi.
+/backup.sql
+/*-backup.sql
+/*.dump

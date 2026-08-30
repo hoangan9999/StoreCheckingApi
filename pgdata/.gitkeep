@@ -1,7 +1,0 @@
-Keeps this folder in git so the deploy package ships it.
-
-Synology's Container Manager does NOT auto-create bind mount folders the way plain
-Docker on Linux does — a missing folder makes the database container fail to start with
-"Bind mount failed: ... does not exist". Shipping an empty folder avoids that.
-
-PostgreSQL data lives here. Do not commit its contents; .gitignore covers that.
