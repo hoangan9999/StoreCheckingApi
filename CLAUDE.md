@@ -683,6 +683,59 @@ Hai hướng còn lại nếu sau này muốn bỏ ràng buộc phải bật Tai
 
 ---
 
+## 📥 Để dành làm sau — hạn mức Gemini
+
+**Đo ngày 2026-08-30, tài khoản đang ở gói MIỄN PHÍ:**
+
+| | Đã dùng / Hạn mức |
+|---|---|
+| RPD (lượt/ngày) | **18 / 20** ← đây là nút thắt |
+| RPM (lượt/phút) | 2 / 5 |
+| TPM (token/phút) | 1.09K / 250K ← chưa tới 1% |
+
+**Nút thắt là SỐ LƯỢT GỌI, không phải dung lượng.** Mọi tối ưu cho gọn nhẹ đều
+vô ích; chỉ giảm được số lượt mới có tác dụng.
+
+Phân bổ hiện tại của 20 lượt/ngày: 5 cho video (mỗi video một kịch bản), 1 cho
+bài đăng Facebook 19:00, còn **14 cho luyện tiếng Anh**.
+
+**Quyết định 2026-08-30: GIỮ NGUYÊN 5 lượt cho 5 video.** Chủ nhà thấy 14 lượt
+cho tiếng Anh là đủ dùng. Hai ý dưới đây đã bàn kỹ và để dành, KHÔNG phải việc
+bỏ dở — có yêu cầu mới làm.
+
+### Ý 1 — Gộp 5 kịch bản vào một lượt gọi
+
+Gửi cả 5 bộ ảnh trong MỘT yêu cầu, mỗi bộ mở đầu bằng một dòng mốc
+`===== ẢNH CHO VIDEO n =====`, và xin về một MẢNG 5 kịch bản qua `responseSchema`
+kiểu ARRAY. **5 lượt → 1 lượt**, tiết kiệm 4 lượt mỗi ngày.
+
+Token tăng khoảng năm lần nhưng token đang thừa mứa (dùng chưa tới 1%).
+
+Đánh đổi: một lượt hỏng là hỏng cả mẻ. Chấp nhận được, vì thứ hay hỏng nhất
+chính là chạm trần hạn mức — mà gộp lại là cách tránh nó.
+
+Đã viết thử một lần rồi hoàn tác theo yêu cầu; không còn dấu vết trong code.
+
+### Ý 2 — Model chạy tại chỗ cho phần tiếng Anh
+
+Máy: **RTX 3050 Laptop 4GB VRAM, 16GB RAM**, chưa cài Ollama.
+
+4GB VRAM chứa gọn model 3-4B; 7-8B phải đẩy bớt sang CPU và chậm hơn hẳn.
+
+Chia việc theo thứ chịu được model yếu:
+- **Luyện tiếng Anh → chạy tại chỗ.** Ngốn lượt nhất, và hội thoại luyện tập
+  chấp nhận được model nhỏ.
+- **Viết kịch bản video → PHẢI giữ Gemini.** Nó cần *nhìn ảnh nhận ra xe gì*,
+  mà model thị giác vừa 4GB VRAM làm việc đó rất tệ.
+
+### Nếu bật gói trả tiền thì hết chuyện
+
+Giá thật (tới hết 2026): **$0.75/triệu token vào, $3.75/triệu token ra**.
+Ước theo mức dùng hiện tại: video ~$2/tháng, tiếng Anh ~$3/tháng — **tổng chừng
+$5, khoảng 130.000đ/tháng**. Rẻ hơn nhiều so với thời gian bỏ ra để né.
+
+---
+
 ## Việc chưa xong, không thuộc giai đoạn nào
 
 - [ ] **Lỗi JWT "issued at future"** bên Supabase vẫn chưa tìm ra nguyên nhân. API .NET
