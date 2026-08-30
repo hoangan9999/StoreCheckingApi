@@ -30,7 +30,11 @@ param(
     [int]   $IntervalMinutes = 5
 )
 
-$ErrorActionPreference = 'Stop'
+# 'Continue', KHÔNG phải 'Stop'. PowerShell 5.1 bọc mỗi dòng stderr của chương trình ngoài
+# thành một bản ghi lỗi; với 'Stop' thì dòng tiến trình bình thường của docker compose —
+# "Container storechecking-db  Running" — trở thành lỗi kết thúc và giết cả lượt kiểm.
+# Đã xảy ra thật ngay lượt đầu. Ở đây chỉ tin vào $LASTEXITCODE.
+$ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -49,7 +53,8 @@ function Write-Line([string]$text, [switch]$Always) {
 }
 
 function Test-Docker {
-    & docker version --format '{{.Server.Version}}' 2>$null | Out-Null
+    # Không chuyển hướng stderr: xem chú thích về ErrorActionPreference ở đầu file.
+    & docker version --format '{{.Server.Version}}' | Out-Null
     return $LASTEXITCODE -eq 0
 }
 
@@ -102,7 +107,7 @@ try {
         if (-not $missing) { Write-Line "Mọi thứ đang chạy."; return }
 
         Write-Line ("Chưa chạy: {0} — đang dựng lại." -f ($missing -join ', ')) -Always
-        & docker compose up -d 2>&1 | Out-Null
+        & docker compose up -d | Out-Null
 
         if ($LASTEXITCODE -eq 0) { Write-Line "Đã dựng lại xong." -Always }
         else { Write-Line "Dựng lại hỏng (mã $LASTEXITCODE). Xem: docker compose logs" -Always }
