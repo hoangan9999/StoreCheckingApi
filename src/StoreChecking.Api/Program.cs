@@ -61,8 +61,10 @@ var dailyVideos = builder.Configuration.GetValue<bool?>("Media:DailyVideos") ?? 
 // 2 giờ sáng: lệch với lượt sao lưu database lúc 1 giờ, để hai việc nặng không chồng nhau.
 var videoHour = builder.Configuration.GetValue<int?>("Media:StartHour") ?? 2;
 
+builder.Services.AddSingleton<VideoJobQueue>();
 builder.Services.AddHostedService(sp => new DailyVideoService(
     sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<VideoJobQueue>(),
     sp.GetRequiredService<ILogger<DailyVideoService>>(),
     Math.Clamp(videoHour, 0, 23), dailyVideos));
 

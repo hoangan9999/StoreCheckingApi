@@ -28,24 +28,50 @@ public sealed class GeminiScriptWriter(
     private const int ThumbWidth = 768;
 
     /// <summary>
-    /// Roughly what fits the target length.
-    /// <para>Vietnamese read aloud runs near three words a second, so 60-90 words lands
-    /// around 25-30 seconds — long enough to say something, short enough for TikTok.</para>
+    /// Góc đạo lý cho mỗi video, bốc ngẫu nhiên một cái.
+    ///
+    /// <para>Đây là thứ làm cho năm video trong ngày khác nhau thật sự. Cùng một lời nhắc và
+    /// cùng một kho ảnh thì mô hình trả về những đoạn na ná nhau — đã xảy ra: mọi video ra
+    /// gần như một nội dung. Ép mỗi lượt đi từ một góc khác nhau rẻ hơn và chắc hơn nhiều so
+    /// với việc chỉ vặn temperature rồi mong nó tự nghĩ ra chuyện mới.</para>
     /// </summary>
+    private static readonly string[] Angles =
+    [
+        "thời gian và sự kiên nhẫn — thứ đáng giá không đến vội",
+        "giá trị thật không nằm ở vẻ ngoài",
+        "ước mơ hồi nhỏ và cách người lớn giữ lại nó",
+        "sưu tầm là giữ lại ký ức, không phải giữ đồ",
+        "chậm mà chắc, đi đường dài",
+        "đam mê không cần ai gật đầu mới thành thật",
+        "thành công là cộng dồn những bước rất nhỏ",
+        "biết đủ, và vui với thứ mình đang có",
+        "chọn cái mình thích hay cái người khác trầm trồ",
+        "thứ rẻ tiền với người này là báu vật với người kia",
+        "cũ không có nghĩa là hết giá trị",
+        "kiên trì với một thứ đủ lâu thì nó thành bản sắc",
+    ];
+
     private const string Prompt = """
-        Bạn viết lời thoại cho video TikTok bán xe mô hình (diecast).
+        Bạn viết lời thoại cho video TikTok về xe mô hình (diecast), có gắn giỏ hàng.
 
         NHÌN KỸ từng ảnh và nhận ra đó là xe gì — tên xe, hãng sản xuất, màu, chi tiết
         đáng chú ý. Nếu nhận ra thương hiệu mô hình (Hot Wheels, Tomica, Mini GT...) thì
         nói luôn.
 
-        Viết một đoạn lời thoại DUY NHẤT, liền mạch, để đọc lên trong video:
-        - Tiếng Việt, 60-90 từ.
-        - Giọng VUI, hào hứng, cuốn người xem — không phải giọng quảng cáo khô khan.
-        - Câu đầu phải giữ chân người xem trong 2 giây đầu.
-        - Nhắc tên vài mẫu xe cụ thể nhìn thấy trong ảnh.
-        - Kết bằng câu mời bấm giỏ hàng, tự nhiên, không sáo rỗng.
-        - KHÔNG bịa giá. KHÔNG dùng emoji. KHÔNG xuống dòng.
+        Bố cục BẮT BUỘC theo đúng thứ tự này:
+        1. MỞ BẰNG ĐẠO LÝ (khoảng một nửa lời thoại). Một suy ngẫm đời thường, gần gũi,
+           đi từ góc đã cho bên dưới. Kể như đang tâm sự, KHÔNG lên lớp, không giáo điều.
+           Câu đầu phải giữ chân người xem trong 2 giây đầu.
+        2. BẮC CẦU sang mấy chiếc xe trong ảnh một cách tự nhiên, gọi tên cụ thể vài mẫu.
+        3. KẾT bằng câu mời bấm giỏ hàng, nhẹ nhàng, không sáo rỗng.
+
+        Yêu cầu chung:
+        - Tiếng Việt, 70-100 từ, một đoạn liền mạch để đọc lên. (Tiếng Việt đọc lên khoảng
+          ba từ một giây, nên chừng đó rơi vào 25-35 giây — đủ dài để nói được điều gì đó,
+          đủ ngắn cho TikTok.)
+        - Giọng ấm và cuốn, có chút hóm hỉnh — không phải giọng quảng cáo khô khan.
+        - KHÔNG bịa giá. KHÔNG emoji. KHÔNG xuống dòng. KHÔNG nói ra chữ "đạo lý".
+        - KHÔNG mở đầu bằng "Bạn có biết", "Có bao giờ bạn", "Trong cuộc sống".
 
         Kèm một tiêu đề ngắn dưới 60 ký tự để đặt tên video.
         """;
@@ -55,7 +81,11 @@ public sealed class GeminiScriptWriter(
     {
         if (imagePaths.Count == 0) throw new InvalidOperationException("Không có ảnh nào để viết kịch bản.");
 
-        var parts = new List<object> { new { text = Prompt } };
+        var angle = Angles[Random.Shared.Next(Angles.Length)];
+        var parts = new List<object>
+        {
+            new { text = Prompt + "\n\nGÓC ĐẠO LÝ CHO VIDEO NÀY: " + angle },
+        };
         var thumbs = new List<string>();
 
         try
@@ -82,6 +112,10 @@ public sealed class GeminiScriptWriter(
                 // the one run nobody was watching.
                 generationConfig = new
                 {
+                    // Cao hơn mặc định: cùng lời nhắc và cùng kho ảnh thì mô hình trả về
+                    // những đoạn rất giống nhau. Góc đạo lý ở trên lo phần khác nhau về nội
+                    // dung, còn con số này lo phần khác nhau về cách diễn đạt.
+                    temperature = 1.15,
                     responseMimeType = "application/json",
                     responseSchema = new
                     {

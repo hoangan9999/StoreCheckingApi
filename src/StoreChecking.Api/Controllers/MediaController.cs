@@ -10,7 +10,7 @@ namespace StoreChecking.Api.Controllers;
 [Authorize]
 [Tags("Kho ảnh & video")]
 [Produces("application/json")]
-public sealed class MediaController(MediaService media) : ControllerBase
+public sealed class MediaController(MediaService media, VideoJobQueue queue) : ControllerBase
 {
     /// <summary>Kích thước tối đa một ảnh tải lên.</summary>
     private const long MaxImageBytes = 25L * 1024 * 1024;
@@ -100,11 +100,24 @@ public sealed class MediaController(MediaService media) : ControllerBase
     public async Task<IActionResult> DeleteVideo(Guid id, CancellationToken ct) =>
         await media.DeleteVideoAsync(id, ct) ? NoContent() : NotFound();
 
-    /// <summary>Dựng ngay một video, không chờ tới lượt chạy hằng ngày.</summary>
-    /// <remarks>Mất khoảng một phút: AI viết, giọng đọc, rồi ffmpeg ghép.</remarks>
+    /// <summary>Đặt một mẻ video để dựng ngay, không chờ tới lượt chạy hằng ngày.</summary>
+    /// <remarks>
+    /// Trả lời NGAY, việc nặng chạy ở tiến trình nền. Dựng năm video mất chừng năm phút và
+    /// không request HTTP nào chờ nổi quãng đó. Theo dõi tiến độ bằng cách đọc lại danh sách
+    /// video: cột `status` cho biết từng cái đang ở chặng nào.
+    /// </remarks>
     [HttpPost("videos/generate")]
-    public async Task<IActionResult> GenerateNow(CancellationToken ct) =>
-        Ok(await media.GenerateOneAsync(ct));
+    public async Task<IActionResult> GenerateNow(int? count, CancellationToken ct)
+    {
+        var n = count is null or < 1
+            ? Math.Max(await media.RemainingTodayAsync(ct), 1)
+            : Math.Min(count.Value, MediaService.PerDay);
+
+        if (!queue.Request(n))
+            return Conflict(new { error = "Đang có mẻ video chạy dở, chờ xong rồi hãy bấm tiếp." });
+
+        return Accepted(new { queued = n });
+    }
 
     /// <summary>Hôm nay còn thiếu mấy video nữa cho đủ mẻ.</summary>
     [HttpGet("videos/remaining-today")]

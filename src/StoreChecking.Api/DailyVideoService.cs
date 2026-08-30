@@ -16,6 +16,7 @@ namespace StoreChecking.Api;
 /// </summary>
 public sealed class DailyVideoService(
     IServiceScopeFactory scopes,
+    VideoJobQueue queue,
     ILogger<DailyVideoService> log,
     int startHour,
     bool enabled) : BackgroundService
@@ -45,29 +46,55 @@ public sealed class DailyVideoService(
         // with the schema check and the warm-up, and a video render would pile on top.
         try { await Task.Delay(TimeSpan.FromMinutes(2), ct); } catch (OperationCanceledException) { return; }
 
-        using var timer = new PeriodicTimer(Interval);
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                await RunOnceAsync(ct);
-                if (!await timer.WaitForNextTickAsync(ct)) return;
+                // Chờ tối đa Interval, nhưng tỉnh NGAY khi có người bấm "Dựng ngay". Một cái
+                // hẹn giờ đơn thuần sẽ bắt người bấm nút chờ tới mười lăm phút mới thấy động
+                // tĩnh gì.
+                var requested = await WaitForWorkAsync(ct);
+
+                if (requested is { } n) await GenerateAsync(n, "theo yêu cầu", ct);
+                else await RunDailyAsync(ct);
             }
             catch (OperationCanceledException) { return; }
             catch (Exception ex)
             {
                 // Never let the loop die. A batch that failed today should be retried, not
                 // silently stop the feature until somebody restarts the container.
-                log.LogWarning(ex, "Lượt dựng video hằng ngày hỏng, sẽ thử lại lượt sau.");
+                log.LogWarning(ex, "Lượt dựng video hỏng, sẽ thử lại lượt sau.");
             }
         }
     }
 
-    private async Task RunOnceAsync(CancellationToken ct)
+    /// <summary>Trả về số video được yêu cầu, hoặc null khi chỉ là hết giờ chờ định kỳ.</summary>
+    private async Task<int?> WaitForWorkAsync(CancellationToken ct)
+    {
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        wait.CancelAfter(Interval);
+
+        try { return await queue.Reader.ReadAsync(wait.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return null;                    // hết giờ chờ, tới lượt kiểm định kỳ
+        }
+    }
+
+    /// <summary>Lượt kiểm định kỳ: tới giờ chưa, và hôm nay còn thiếu mấy video.</summary>
+    private async Task RunDailyAsync(CancellationToken ct)
     {
         var vnNow = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.UtcNow, "Asia/Ho_Chi_Minh");
         if (vnNow.Hour < startHour) return;
 
+        await GenerateAsync(null, "theo lịch", ct);
+    }
+
+    /// <summary>
+    /// Dựng <paramref name="count"/> video, hoặc dựng cho đủ mẻ hôm nay khi để null.
+    /// </summary>
+    private async Task GenerateAsync(int? count, string why, CancellationToken ct)
+    {
         await using var scope = scopes.CreateAsyncScope();
         var sp = scope.ServiceProvider;
 
@@ -77,22 +104,22 @@ public sealed class DailyVideoService(
         sp.GetRequiredService<ScopeUser>().RunAs(owner.Value);
 
         var media = sp.GetRequiredService<MediaService>();
-        var missing = await media.RemainingTodayAsync(ct);
-        if (missing == 0) return;
+        var todo = count ?? await media.RemainingTodayAsync(ct);
+        if (todo <= 0) return;
 
-        log.LogInformation("Hôm nay còn thiếu {N} video, bắt đầu dựng.", missing);
+        log.LogInformation("Dựng {N} video ({Why}).", todo, why);
 
-        for (var i = 0; i < missing && !ct.IsCancellationRequested; i++)
+        for (var i = 0; i < todo && !ct.IsCancellationRequested; i++)
         {
             try { await media.GenerateOneAsync(ct); }
             catch (Exception ex)
             {
                 // One bad video must not sink the rest of the batch. The row already carries
                 // which stage broke and why, so there is something to look at afterwards.
-                log.LogWarning(ex, "Dựng video thứ {I}/{N} hỏng, bỏ qua và làm tiếp.", i + 1, missing);
+                log.LogWarning(ex, "Dựng video thứ {I}/{N} hỏng, bỏ qua và làm tiếp.", i + 1, todo);
             }
 
-            if (i < missing - 1)
+            if (i < todo - 1)
             {
                 try { await Task.Delay(Gap, ct); } catch (OperationCanceledException) { return; }
             }
