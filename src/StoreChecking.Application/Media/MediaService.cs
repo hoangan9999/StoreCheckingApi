@@ -136,6 +136,36 @@ public sealed class MediaService(
         return true;
     }
 
+    /// <summary>
+    /// Xoá những dòng trỏ tới file không còn trên đĩa, trả về số dòng đã xoá.
+    ///
+    /// <para>Một dòng như thế không còn giá trị gì: không xem được, không dựng video được,
+    /// mà lại luôn được bộ chọn ưu tiên vì chưa dùng lần nào. Để nguyên thì nó chặn tính
+    /// năng vĩnh viễn. Chỉ xoá dòng — file vốn đã không còn để mà mất thêm.</para>
+    /// </summary>
+    public async Task<int> CleanupMissingAsync(CancellationToken ct = default)
+    {
+        var removed = 0;
+        var offset = 0;
+
+        while (true)
+        {
+            var (_, batch) = await images.ListAsync(null, offset, MaxPage, ct);
+            if (batch.Count == 0) break;
+
+            foreach (var row in batch)
+            {
+                if (storage.ImagePath(row.Filename) is null) { images.Remove(row); removed++; }
+            }
+
+            if (batch.Count < MaxPage) break;
+            offset += MaxPage;
+        }
+
+        if (removed > 0) await uow.SaveChangesAsync(ct);
+        return removed;
+    }
+
     // ---------- Dựng video ----------
 
     /// <summary>How many more are still owed today.</summary>
@@ -152,11 +182,32 @@ public sealed class MediaService(
     public async Task<GeneratedVideoDto> GenerateOneAsync(CancellationToken ct = default)
     {
         var count = Random.Shared.Next(MinPerVideo, MaxPerVideo + 1);
-        var picked = await images.PickLeastUsedAsync(count, ct);
 
-        if (picked.Count < MinPerVideo)
+        // Xin dư rồi lọc, thay vì xin đúng số cần.
+        //
+        // Một dòng có thể trỏ tới file không còn trên đĩa — đã xảy ra thật khi container được
+        // dựng lại trước lúc volume tồn tại. Những dòng đó có use_count = 0 nên bộ chọn luôn
+        // ưu tiên chúng, và nếu không lọc ra thì chúng sẽ làm hỏng MỌI lần dựng về sau chứ
+        // không chỉ lần này. Lọc theo file thật sự có mặt là thứ duy nhất đáng tin.
+        var candidates = await images.PickLeastUsedAsync(count * 3, ct);
+
+        var usable = new List<(MediaImage Image, string Path)>();
+        foreach (var c in candidates)
+        {
+            if (usable.Count >= count) break;
+            if (storage.ImagePath(c.Filename) is { } p) usable.Add((c, p));
+        }
+
+        if (usable.Count < MinPerVideo)
+        {
+            var ghosts = candidates.Count - usable.Count;
             throw new InvalidOperationException(
-                $"Kho ảnh chỉ có {picked.Count} ảnh, cần ít nhất {MinPerVideo} để dựng một video.");
+                $"Chỉ có {usable.Count} ảnh dùng được, cần ít nhất {MinPerVideo}." +
+                (ghosts > 0 ? $" ({ghosts} ảnh mất file trên đĩa — bấm \"Dọn ảnh hỏng\" rồi tải lại.)" : ""));
+        }
+
+        var picked = usable.Select(u => u.Image).ToList();
+        var pickedPaths = usable.Select(u => u.Path).ToList();
 
         var row = new GeneratedVideo
         {
@@ -172,14 +223,7 @@ public sealed class MediaService(
 
         try
         {
-            var paths = picked
-                .Select(p => storage.ImagePath(p.Filename))
-                .OfType<string>()
-                .ToList();
-
-            if (paths.Count < MinPerVideo)
-                throw new InvalidOperationException("Một số ảnh có trong danh sách nhưng mất file trên đĩa.");
-
+            var paths = pickedPaths;
             var script = await writer.WriteAsync(paths, ct);
             row.Title = script.Title;
             row.Script = script.Script;

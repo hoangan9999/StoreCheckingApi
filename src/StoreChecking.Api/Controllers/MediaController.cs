@@ -63,6 +63,15 @@ public sealed class MediaController(MediaService media) : ControllerBase
         return s is null ? NotFound() : File(s, "image/jpeg");
     }
 
+    /// <summary>Dọn những dòng ảnh đã mất file trên đĩa.</summary>
+    /// <remarks>
+    /// Dòng mất file không xem được, không dựng video được, mà vẫn luôn được bộ chọn ưu
+    /// tiên vì chưa dùng lần nào — để nguyên thì nó chặn việc dựng video vĩnh viễn.
+    /// </remarks>
+    [HttpPost("images/cleanup")]
+    public async Task<IActionResult> Cleanup(CancellationToken ct) =>
+        Ok(new { removed = await media.CleanupMissingAsync(ct) });
+
     [HttpDelete("images/{id:guid}")]
     public async Task<IActionResult> DeleteImage(Guid id, CancellationToken ct) =>
         await media.DeleteImageAsync(id, ct) ? NoContent() : NotFound();
