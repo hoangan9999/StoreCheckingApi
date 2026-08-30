@@ -63,6 +63,20 @@ public sealed class MediaImageRepository(AppDbContext db) : IMediaImageRepositor
 
     public Task<int> CountAsync(CancellationToken ct = default) => db.MediaImages.CountAsync(ct);
 
+    public async Task<Guid?> FindOwnerAsync(CancellationToken ct = default)
+    {
+        // IgnoreQueryFilters vì lúc này chưa biết chủ sở hữu là ai — chính nó là thứ đang
+        // đi tìm. Chỉ trả về một id, không trả về dòng dữ liệu nào.
+        var rows = await db.MediaImages.IgnoreQueryFilters()
+            .GroupBy(x => x.UserId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .Take(1)
+            .ToListAsync(ct);
+
+        return rows.Count > 0 ? rows[0].Key : null;
+    }
+
     public void Add(MediaImage row) => db.MediaImages.Add(row);
     public void Remove(MediaImage row) => db.MediaImages.Remove(row);
 

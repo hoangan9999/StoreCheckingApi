@@ -49,7 +49,22 @@ var swaggerEnabled = builder.Configuration.GetValue("Swagger:Enabled", builder.E
 
 // ---------- Services ----------
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+// ScopeUser thay cho HttpCurrentUser: vẫn đọc chủ sở hữu từ token như cũ, nhưng cho phép
+// việc chạy nền — vốn không có request nào phía sau — tự đặt chủ sở hữu cho đúng phạm vi
+// của nó. Controller không bao giờ gọi RunAs, nên một request không thể chọn xem dữ liệu
+// của người khác.
+builder.Services.AddScoped<ScopeUser>();
+builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<ScopeUser>());
+
+// Tự dựng video mỗi ngày. Đặt Media:DailyVideos = false để tắt.
+var dailyVideos = builder.Configuration.GetValue<bool?>("Media:DailyVideos") ?? true;
+// 2 giờ sáng: lệch với lượt sao lưu database lúc 1 giờ, để hai việc nặng không chồng nhau.
+var videoHour = builder.Configuration.GetValue<int?>("Media:StartHour") ?? 2;
+
+builder.Services.AddHostedService(sp => new DailyVideoService(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<ILogger<DailyVideoService>>(),
+    Math.Clamp(videoHour, 0, 23), dailyVideos));
 
 // Repositories, unit of work and the application services all come from one place.
 // Khoảng cách giữa hai lần hâm nóng database. Đặt Warmup:IntervalSeconds = 0 để tắt.

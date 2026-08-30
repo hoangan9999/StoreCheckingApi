@@ -23,6 +23,16 @@ public interface IMediaImageRepository
     Task<MediaImage?> FindAsync(Guid id, CancellationToken ct = default);
     Task<int> CountAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Whose album this is, worked out from the data itself.
+    /// <para>The nightly job has no request behind it and therefore no token to read an
+    /// owner from. Asking the data beats putting the id in configuration: nothing to fill
+    /// in by hand, and nothing left pointing at the wrong account after a re-login.</para>
+    /// <para>The ONLY place that steps outside the owner filter, and it returns an id
+    /// rather than rows — no caller can reach another person's data through it.</para>
+    /// </summary>
+    Task<Guid?> FindOwnerAsync(CancellationToken ct = default);
+
     void Add(MediaImage row);
     void Remove(MediaImage row);
 }
