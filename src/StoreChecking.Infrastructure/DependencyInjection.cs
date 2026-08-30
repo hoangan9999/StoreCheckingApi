@@ -26,7 +26,8 @@ public static class DependencyInjection
     /// How often to touch the database so nobody's first request has to. Zero turns it off.
     /// </param>
     public static IServiceCollection AddInfrastructure(
-        this IServiceCollection services, string connectionString, TimeSpan warmupInterval)
+        this IServiceCollection services, string connectionString, TimeSpan warmupInterval,
+        string mediaRoot)
     {
         // Pool settings applied before anything else sees the string, so the migrator and
         // the DbContext agree on how connections are kept.
@@ -45,6 +46,11 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IDatabaseHealth, DatabaseHealth>();
 
+        // Kho ảnh/video trên đĩa. Singleton vì nó chỉ giữ hai đường dẫn và tạo sẵn thư
+        // mục một lần lúc khởi động, không giữ trạng thái nào theo từng request.
+        services.AddSingleton<IMediaStorage>(sp => new StoreChecking.Infrastructure.Media.DiskMediaStorage(
+            mediaRoot, sp.GetRequiredService<ILogger<StoreChecking.Infrastructure.Media.DiskMediaStorage>>()));
+
         // ---------- Repositories ----------
         services.AddScoped<IWorkDayRepository, WorkDayRepository>();
         services.AddScoped<IWorkMonthNoteRepository, WorkMonthNoteRepository>();
@@ -52,6 +58,8 @@ public static class DependencyInjection
         services.AddScoped<ISavedSentenceRepository, SavedSentenceRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IPackingVideoRepository, PackingVideoRepository>();
+        services.AddScoped<IMediaImageRepository, MediaImageRepository>();
+        services.AddScoped<IGeneratedVideoRepository, GeneratedVideoRepository>();
         services.AddScoped<IExpenseCategoryRepository, ExpenseCategoryRepository>();
         services.AddScoped<IExpenseRepository, ExpenseRepository>();
         services.AddScoped<IMonthlyIncomeRepository, MonthlyIncomeRepository>();

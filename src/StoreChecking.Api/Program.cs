@@ -57,7 +57,11 @@ builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 // không đáng kể — mỗi lượt là một câu đếm trên bảng vài dòng.
 var warmupSeconds = builder.Configuration.GetValue<int?>("Warmup:IntervalSeconds") ?? 240;
 
-builder.Services.AddInfrastructure(connString, TimeSpan.FromSeconds(Math.Max(warmupSeconds, 0)));
+// Nơi chứa ảnh tải lên và video tự sinh. Mặc định hợp với volume khai trong compose.
+var mediaRoot = builder.Configuration["Media:Root"] ?? "/data/media";
+
+builder.Services.AddInfrastructure(
+    connString, TimeSpan.FromSeconds(Math.Max(warmupSeconds, 0)), mediaRoot);
 builder.Services.AddSingleton<LastRequestClock>();
 
 builder.Services.AddControllers();

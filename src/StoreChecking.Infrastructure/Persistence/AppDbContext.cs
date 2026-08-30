@@ -16,6 +16,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser u
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<PackingVideo> PackingVideos => Set<PackingVideo>();
 
+    // Kho ảnh và video tự sinh (tab Tiện ích). Chỉ thông tin — file nằm trên đĩa.
+    public DbSet<MediaImage> MediaImages => Set<MediaImage>();
+    public DbSet<GeneratedVideo> GeneratedVideos => Set<GeneratedVideo>();
+
     public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
     public DbSet<Expense> Expenses => Set<Expense>();
     public DbSet<MonthlyIncome> MonthlyIncomes => Set<MonthlyIncome>();
