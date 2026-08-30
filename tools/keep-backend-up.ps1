@@ -58,6 +58,31 @@ function Test-Docker {
     return $LASTEXITCODE -eq 0
 }
 
+function Invoke-DailyBackup {
+    # Chạy sau 01:00 và chỉ một lượt mỗi ngày, dựa vào một file mốc ghi ngày đã chạy.
+    #
+    # Chính file mốc đó là cơ chế bù: máy tắt cả đêm thì sáng bật lên, ngày ghi trong mốc
+    # vẫn là hôm qua nên lượt sao lưu chạy ngay. Lịch chạy đặt ở NAS không làm được điều
+    # này — nó không bật hộ được cái PC đang tắt, và đêm đó mất luôn.
+    $marker = "$env:LOCALAPPDATA\storechecking-backup.lastrun"
+    $today  = Get-Date -Format 'yyyy-MM-dd'
+
+    if ((Get-Date).Hour -lt 1) { return }
+    if ((Test-Path $marker) -and ((Get-Content $marker -Raw).Trim() -eq $today)) { return }
+
+    Write-Line "Chạy sao lưu database hằng ngày." -Always
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'backup-to-nas.ps1') | Out-Null
+
+    if ($LASTEXITCODE -eq 0) {
+        # Chỉ đánh dấu khi ĐÃ xong. Hỏng mà vẫn đánh dấu thì hôm đó coi như mất bản sao lưu
+        # và không ai biết.
+        Set-Content $marker $today -Encoding ascii
+        Write-Line "Sao lưu xong." -Always
+    } else {
+        Write-Line "Sao lưu chưa xong, lượt sau thử lại." -Always
+    }
+}
+
 function Invoke-Check {
 
 # Two runs at once would fight over the same containers.
@@ -125,8 +150,10 @@ if ($Loop) {
     while ($true) {
         # Một lượt hỏng không được phép giết vòng canh — hỏng thì lượt sau kiểm lại.
         try { Invoke-Check } catch { Write-Line "Lượt kiểm hỏng: $($_.Exception.Message)" -Always }
+        try { Invoke-DailyBackup } catch { Write-Line "Sao lưu hỏng: $($_.Exception.Message)" -Always }
         Start-Sleep -Seconds ($IntervalMinutes * 60)
     }
 } else {
     Invoke-Check
+    Invoke-DailyBackup
 }
