@@ -20,6 +20,12 @@ RUN dotnet publish -a $TARGETARCH --no-restore -c Release -o /app src/StoreCheck
 # No --platform here on purpose: this stage must BE the target architecture. It only
 # copies files, so nothing foreign is ever executed and no emulation is needed.
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
+
+# ffmpeg để ghép ảnh + giọng đọc thành video. Cài trong ảnh chứ không dựng container riêng:
+# tiến trình nền sinh video nằm ngay trong API này, tách ra thành dịch vụ riêng chỉ để gọi
+# một lệnh là thêm một thứ phải trông coi mà không được gì.
+RUN apt-get update  && apt-get install -y --no-install-recommends ffmpeg  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY --from=build /app .
 

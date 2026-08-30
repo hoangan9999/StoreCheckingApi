@@ -85,7 +85,12 @@ services:
     container_name: storechecking-api
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 256m
+    mem_limit: 1g
+    volumes:
+      # Ảnh tải lên và video tự sinh. Named volume chứ không phải bảng trong Postgres: dữ
+      # liệu nhị phân trong database sẽ thổi bản sao lưu hằng ngày từ vài trăm KB lên hàng
+      # GB, mà bản đó đang được đẩy qua mạng sang NAS mỗi đêm.
+      - media:/data/media
     labels:
       # Watchtower only touches containers carrying this scope, so the other apps on this
       # NAS (solar, nas-uploader) are never restarted behind your back.
@@ -106,6 +111,15 @@ services:
       # đổi chút CPU lấy chỗ trống, đúng thứ máy này thiếu.
       DOTNET_gcServer: "0"
       DOTNET_GCConserveMemory: "7"
+
+      # ---------- Kho ảnh / video tự sinh ----------
+      Media__Root: /data/media
+      # Nhìn ảnh nhận ra là xe gì rồi viết kịch bản. Cùng model mà các hàm trên Vercel đang
+      # dùng, và nó nhận ảnh đầu vào — đã tra tài liệu chính thức, không đoán.
+      Media__GeminiApiKey: ${GEMINI_API_KEY}
+      # Giọng Adam chạy TRÊN CHÍNH MÁY NÀY, ngoài Docker. host.docker.internal là đường từ
+      # trong container ra máy thật — đã thử từ trong container, trả 200.
+      Media__TtsUrl: http://host.docker.internal:5050/
       # The API applies db/*.sql itself at startup. Set SCHEMA_AUTOMIGRATE=false in .env
       # to switch that off — the escape hatch for getting the API up while the schema is
       # being sorted out by hand. Declared here because .env only substitutes into this
@@ -186,3 +200,4 @@ services:
 volumes:
   pgdata:
   ts-state:
+  media:
