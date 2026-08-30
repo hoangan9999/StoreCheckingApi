@@ -18,7 +18,7 @@ public sealed class DailyVideoService(
     IServiceScopeFactory scopes,
     VideoJobQueue queue,
     ILogger<DailyVideoService> log,
-    int startHour,
+    int[] slots,
     bool enabled) : BackgroundService
 {
     /// <summary>How often to look. Cheap: one count query when there is nothing to do.</summary>
@@ -40,7 +40,7 @@ public sealed class DailyVideoService(
             return;
         }
 
-        log.LogInformation("Tự dựng {N} video mỗi ngày, bắt đầu từ {Hour}h.", MediaService.PerDay, startHour);
+        log.LogInformation("Tự dựng video vào các khung giờ: {Slots}.", string.Join("h, ", slots) + "h");
 
         // A first look after a short delay rather than immediately: startup is already busy
         // with the schema check and the warm-up, and a video render would pile on top.
@@ -81,19 +81,29 @@ public sealed class DailyVideoService(
         }
     }
 
-    /// <summary>Lượt kiểm định kỳ: tới giờ chưa, và hôm nay còn thiếu mấy video.</summary>
+    /// <summary>
+    /// Lượt kiểm định kỳ: tới giờ nào rồi thì phải có đủ bấy nhiêu video.
+    ///
+    /// <para>Đếm số khung giờ ĐÃ QUA trong ngày rồi so với số video đã có, thay vì hẹn đúng
+    /// từng mốc. Cách này tự bù: máy tắt cả buổi sáng, bật lên lúc 15h thì ba khung 7h, 11h,
+    /// 14h đều đã qua nên nó dựng bù ba video. Hẹn đúng mốc thì ba khung đó mất trắng.</para>
+    ///
+    /// <para>Cũng nhờ vậy mà lượt kiểm chạy mỗi mười lăm phút là đủ — không cần canh đúng
+    /// phút, chỉ cần đúng số.</para>
+    /// </summary>
     private async Task RunDailyAsync(CancellationToken ct)
     {
         var vnNow = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.UtcNow, "Asia/Ho_Chi_Minh");
-        if (vnNow.Hour < startHour) return;
+        var due = slots.Count(h => vnNow.Hour >= h);
+        if (due == 0) return;
 
-        await GenerateAsync(null, "theo lịch", ct);
+        await GenerateAsync(null, $"theo lịch — đã qua {due} khung giờ", ct, due);
     }
 
     /// <summary>
     /// Dựng <paramref name="count"/> video, hoặc dựng cho đủ mẻ hôm nay khi để null.
     /// </summary>
-    private async Task GenerateAsync(int? count, string why, CancellationToken ct)
+    private async Task GenerateAsync(int? count, string why, CancellationToken ct, int? dueByNow = null)
     {
         await using var scope = scopes.CreateAsyncScope();
         var sp = scope.ServiceProvider;
@@ -104,7 +114,13 @@ public sealed class DailyVideoService(
         sp.GetRequiredService<ScopeUser>().RunAs(owner.Value);
 
         var media = sp.GetRequiredService<MediaService>();
-        var todo = count ?? await media.RemainingTodayAsync(ct);
+
+        // Theo lịch: chỉ dựng cho ĐỦ số khung giờ đã qua, không dựng trước phần của các
+        // khung giờ còn ở phía trước — mục đích của khung giờ là rải đều trong ngày.
+        var todo = count ?? (dueByNow is { } due
+            ? Math.Min(due - await media.MadeTodayAsync(ct), MediaService.PerDay)
+            : await media.RemainingTodayAsync(ct));
+
         if (todo <= 0) return;
 
         log.LogInformation("Dựng {N} video ({Why}).", todo, why);

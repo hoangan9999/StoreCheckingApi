@@ -96,6 +96,15 @@ public sealed class MediaController(MediaService media, VideoJobQueue queue) : C
         return s is null ? NotFound() : File(s, "video/mp4", enableRangeProcessing: true);
     }
 
+    /// <summary>Đánh dấu một video là đã tải về.</summary>
+    /// <remarks>
+    /// Giao diện gọi sau khi tải xong. Không tự đánh dấu khi ai đó mở file, vì nút "Xem"
+    /// cũng đọc đúng file đó — xem thử không có nghĩa là đã lấy đi dùng.
+    /// </remarks>
+    [HttpPost("videos/{id:guid}/downloaded")]
+    public async Task<IActionResult> MarkDownloaded(Guid id, CancellationToken ct) =>
+        await media.MarkDownloadedAsync(id, ct) ? NoContent() : NotFound();
+
     [HttpDelete("videos/{id:guid}")]
     public async Task<IActionResult> DeleteVideo(Guid id, CancellationToken ct) =>
         await media.DeleteVideoAsync(id, ct) ? NoContent() : NotFound();

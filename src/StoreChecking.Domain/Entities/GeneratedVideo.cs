@@ -53,4 +53,12 @@ public class GeneratedVideo : IOwnedByUser
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }
+
+    /// <summary>
+    /// When it was downloaded, or null if it never was.
+    /// <para>Five new videos a day: without this there is no telling after a few days which
+    /// ones were already taken. A timestamp rather than a flag answers the same question and
+    /// also says when.</para>
+    /// </summary>
+    public DateTimeOffset? DownloadedAt { get; set; }
 }

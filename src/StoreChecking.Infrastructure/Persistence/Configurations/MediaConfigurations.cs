@@ -46,6 +46,7 @@ public sealed class GeneratedVideoConfiguration : IEntityTypeConfiguration<Gener
         e.Property(x => x.BatchDay).HasColumnName("batch_day").HasColumnType("date");
         e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         e.Property(x => x.FinishedAt).HasColumnName("finished_at");
+        e.Property(x => x.DownloadedAt).HasColumnName("downloaded_at");
         e.HasIndex(x => new { x.UserId, x.BatchDay });
     }
 }

@@ -58,15 +58,23 @@ builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<ScopeUser>(
 
 // Tự dựng video mỗi ngày. Đặt Media:DailyVideos = false để tắt.
 var dailyVideos = builder.Configuration.GetValue<bool?>("Media:DailyVideos") ?? true;
-// 2 giờ sáng: lệch với lượt sao lưu database lúc 1 giờ, để hai việc nặng không chồng nhau.
-var videoHour = builder.Configuration.GetValue<int?>("Media:StartHour") ?? 2;
+
+// Khung giờ dựng video, rải đều trong ngày để có cái mà đăng vài tiếng một lần thay vì
+// dồn cả mẻ lúc rạng sáng. Đặt Media:Slots = "7,11,14,17,20" để đổi.
+var slots = (builder.Configuration["Media:Slots"] ?? "7,11,14,17,20")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    .Select(x => int.TryParse(x, out var h) ? h : -1)
+    .Where(h => h is >= 0 and <= 23)
+    .Distinct()
+    .OrderBy(h => h)
+    .ToArray();
 
 builder.Services.AddSingleton<VideoJobQueue>();
 builder.Services.AddHostedService(sp => new DailyVideoService(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<VideoJobQueue>(),
     sp.GetRequiredService<ILogger<DailyVideoService>>(),
-    Math.Clamp(videoHour, 0, 23), dailyVideos));
+    slots, dailyVideos));
 
 // Repositories, unit of work and the application services all come from one place.
 // Khoảng cách giữa hai lần hâm nóng database. Đặt Warmup:IntervalSeconds = 0 để tắt.

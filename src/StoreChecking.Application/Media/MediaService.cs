@@ -10,7 +10,7 @@ public record MediaImageDto(
 public record GeneratedVideoDto(
     Guid Id, string? Filename, string Title, string Script, decimal? DurationSec,
     long? Bytes, string Status, string? Error, DateOnly BatchDay,
-    DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt);
+    DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt, DateTimeOffset? DownloadedAt);
 
 public record DayCountDto(DateOnly Day, int Count);
 
@@ -124,6 +124,22 @@ public sealed class MediaService(
     public async Task<GeneratedVideoDto?> FindVideoAsync(Guid id, CancellationToken ct = default) =>
         await videos.FindAsync(id, ct) is { } row ? ToDto(row) : null;
 
+    /// <summary>
+    /// Đánh dấu đã tải. Gọi lại lần nữa không đổi gì — mốc đầu tiên mới là mốc thật.
+    /// </summary>
+    public async Task<bool> MarkDownloadedAsync(Guid id, CancellationToken ct = default)
+    {
+        var row = await videos.FindAsync(id, ct);
+        if (row is null) return false;
+
+        if (row.DownloadedAt is null)
+        {
+            row.DownloadedAt = DateTimeOffset.UtcNow;
+            await uow.SaveChangesAsync(ct);
+        }
+        return true;
+    }
+
     public async Task<bool> DeleteVideoAsync(Guid id, CancellationToken ct = default)
     {
         var row = await videos.FindAsync(id, ct);
@@ -170,7 +186,11 @@ public sealed class MediaService(
 
     /// <summary>How many more are still owed today.</summary>
     public async Task<int> RemainingTodayAsync(CancellationToken ct = default) =>
-        Math.Max(PerDay - await videos.CountForDayAsync(Today(), ct), 0);
+        Math.Max(PerDay - await MadeTodayAsync(ct), 0);
+
+    /// <summary>How many have been made today already, failures not counted.</summary>
+    public Task<int> MadeTodayAsync(CancellationToken ct = default) =>
+        videos.CountForDayAsync(Today(), ct);
 
     /// <summary>
     /// Builds one video, start to finish.
@@ -275,5 +295,5 @@ public sealed class MediaService(
 
     private static GeneratedVideoDto ToDto(GeneratedVideo r) =>
         new(r.Id, r.Filename, r.Title, r.Script, r.DurationSec, r.Bytes,
-            r.Status, r.Error, r.BatchDay, r.CreatedAt, r.FinishedAt);
+            r.Status, r.Error, r.BatchDay, r.CreatedAt, r.FinishedAt, r.DownloadedAt);
 }
