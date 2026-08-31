@@ -81,6 +81,11 @@ public interface IMediaStorage
     Stream? OpenImage(string filename);
     Stream? OpenVideo(string filename);
 
+    /// <summary>Ảnh của ghi chú — thư mục riêng, không lẫn vào kho ảnh dựng video.</summary>
+    Task<string> SaveNoteImageAsync(Stream content, string extension, CancellationToken ct = default);
+    Stream? OpenNoteImage(string filename);
+    void DeleteNoteImage(string filename);
+
     /// <summary>Full path of a stored picture — ffmpeg needs real paths, not streams.</summary>
     string? ImagePath(string filename);
     string VideoPath(string filename);

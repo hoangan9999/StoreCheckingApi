@@ -15,13 +15,18 @@ public sealed class DiskMediaStorage : IMediaStorage
 {
     private readonly string _images;
     private readonly string _videos;
+    private readonly string _notes;
 
     public DiskMediaStorage(string root, ILogger<DiskMediaStorage> log)
     {
         _images = Path.Combine(root, "images");
         _videos = Path.Combine(root, "videos");
+        // Thư mục riêng, KHÔNG phải `images`: kho ảnh đó là nguồn để dựng video bán hàng,
+        // ảnh ghi chú lọt vào đó là lên sóng ảnh chụp màn hình.
+        _notes = Path.Combine(root, "notes");
         Directory.CreateDirectory(_images);
         Directory.CreateDirectory(_videos);
+        Directory.CreateDirectory(_notes);
         log.LogInformation("Kho ảnh/video: {Root}", root);
     }
 
@@ -46,6 +51,12 @@ public sealed class DiskMediaStorage : IMediaStorage
 
     public void DeleteImage(string filename) => Delete(_images, filename);
     public void DeleteVideo(string filename) => Delete(_videos, filename);
+
+    public Task<string> SaveNoteImageAsync(Stream content, string extension, CancellationToken ct = default) =>
+        SaveAsync(_notes, content, extension, ct);
+
+    public Stream? OpenNoteImage(string filename) => Open(_notes, filename);
+    public void DeleteNoteImage(string filename) => Delete(_notes, filename);
 
     public IReadOnlyList<string> ListVideoFiles()
     {

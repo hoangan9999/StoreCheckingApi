@@ -26,7 +26,12 @@ public sealed class NotesContractTests(ApiFactory api)
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
 
         var note = await Json.Read(created);
-        Json.HasExactly(note, "id", "title", "content", "createdAt", "updatedAt");
+        Json.HasExactly(note, "id", "title", "content", "images", "createdAt", "updatedAt");
+
+        // Ghi chú mới phải có mảng ảnh RỖNG, không phải null: phía giao diện duyệt thẳng
+        // mảng này, và null thì mọi ghi chú chưa đính ảnh sẽ làm vỡ danh sách.
+        Assert.Equal(JsonValueKind.Array, note.GetProperty("images").ValueKind);
+        Assert.Equal(0, note.GetProperty("images").GetArrayLength());
         Assert.Equal("STK Vietcombank", note.GetProperty("title").GetString());   // trimmed
         Assert.Equal("0123456789", note.GetProperty("content").GetString());
 
@@ -136,5 +141,74 @@ public sealed class NotesContractTests(ApiFactory api)
     public async Task Khong_co_token_thi_401()
     {
         Assert.Equal(HttpStatusCode.Unauthorized, (await api.AnonymousClient().GetAsync("/api/notes")).StatusCode);
+    }
+
+    /// <summary>Một ảnh JPEG nhỏ nhất có thể, đủ để máy chủ nhận là ảnh thật.</summary>
+    private static byte[] TinyJpeg() => Convert.FromBase64String(
+        "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a" +
+        "HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA" +
+        "AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==");
+
+    [DbFact]
+    public async Task Dinh_nhieu_anh_vao_ghi_chu_roi_go_ra()
+    {
+        var c = NewUser();
+        var id = (await Json.Read(await c.PostJson("/api/notes",
+            new { title = "Mẫu tin nhắn", content = "xin chào" }))).GetProperty("id").GetGuid();
+
+        async Task<System.Text.Json.JsonElement> Attach(string name)
+        {
+            using var form = new MultipartFormDataContent();
+            var img = new ByteArrayContent(TinyJpeg());
+            img.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            form.Add(img, "file", name);
+
+            var res = await c.PostAsync($"/api/notes/{id}/images", form);
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+            return await Json.Read(res);
+        }
+
+        await Attach("mot.jpg");
+        var two = await Attach("hai.jpg");
+
+        // Đính nhiều ảnh, và thứ tự giữ nguyên như lúc thêm.
+        Assert.Equal(2, two.GetProperty("images").GetArrayLength());
+
+        var first = two.GetProperty("images")[0].GetString()!;
+
+        // Ảnh xem lại được, và đúng là ảnh chứ không phải trang lỗi.
+        var file = await c.GetAsync($"/api/notes/images/{first}");
+        Assert.Equal(HttpStatusCode.OK, file.StatusCode);
+        Assert.Equal("image/jpeg", file.Content.Headers.ContentType?.MediaType);
+
+        // Gỡ một ảnh thì chỉ ảnh đó đi, ảnh còn lại ở nguyên.
+        var after = await Json.Read(await c.DeleteAsync($"/api/notes/{id}/images/{first}"));
+        Assert.Equal(1, after.GetProperty("images").GetArrayLength());
+        Assert.NotEqual(first, after.GetProperty("images")[0].GetString());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await c.GetAsync($"/api/notes/images/{first}")).StatusCode);
+    }
+
+    // Ảnh phải đi theo ghi chú. Để lại thì chúng nằm trên đĩa mãi mà không còn chỗ nào
+    // hiển thị để mà biết là chúng còn tồn tại.
+    [DbFact]
+    public async Task Xoa_ghi_chu_thi_anh_di_theo()
+    {
+        var c = NewUser();
+        var id = (await Json.Read(await c.PostJson("/api/notes",
+            new { title = (string?)null, content = "có ảnh" }))).GetProperty("id").GetGuid();
+
+        using var form = new MultipartFormDataContent();
+        var img = new ByteArrayContent(TinyJpeg());
+        img.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        form.Add(img, "file", "anh.jpg");
+
+        var attached = await Json.Read(await c.PostAsync($"/api/notes/{id}/images", form));
+        var name = attached.GetProperty("images")[0].GetString()!;
+
+        Assert.Equal(HttpStatusCode.OK, (await c.GetAsync($"/api/notes/images/{name}")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await c.DeleteAsync($"/api/notes/{id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await c.GetAsync($"/api/notes/images/{name}")).StatusCode);
     }
 }

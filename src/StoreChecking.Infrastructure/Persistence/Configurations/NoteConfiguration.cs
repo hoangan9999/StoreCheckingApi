@@ -13,6 +13,7 @@ public sealed class NoteConfiguration : IEntityTypeConfiguration<Note>
         e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.UserId).HasColumnName("user_id");
         e.Property(x => x.Title).HasColumnName("title");
+        e.Property(x => x.Images).HasColumnName("images").HasColumnType("text[]");
         e.Property(x => x.Content).HasColumnName("content").HasDefaultValue("");
         e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");

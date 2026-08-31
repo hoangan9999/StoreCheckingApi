@@ -29,6 +29,39 @@ public sealed class NotesController(NotesService notes) : ControllerBase
     }
 
     /// <summary>Sửa tiêu đề và nội dung một ghi chú.</summary>
+    /// <summary>Đính một ảnh vào ghi chú.</summary>
+    [HttpPost("{id:guid}/images")]
+    [RequestSizeLimit(30L * 1024 * 1024)]
+    public async Task<IActionResult> AddImage(Guid id, IFormFile file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Chưa chọn ảnh." });
+        if (!(file.ContentType ?? "").StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { error = "File này không phải ảnh." });
+
+        var ext = Path.GetExtension(file.FileName);
+        if (string.IsNullOrWhiteSpace(ext)) ext = ".jpg";
+
+        await using var s = file.OpenReadStream();
+        var updated = await notes.AddImageAsync(id, s, ext, ct);
+        return updated is null ? NotFound() : Ok(updated);
+    }
+
+    /// <summary>Xem một ảnh của ghi chú.</summary>
+    [HttpGet("images/{filename}")]
+    public IActionResult Image(string filename)
+    {
+        var s = notes.OpenImage(filename);
+        return s is null ? NotFound() : File(s, "image/jpeg");
+    }
+
+    /// <summary>Gỡ một ảnh khỏi ghi chú.</summary>
+    [HttpDelete("{id:guid}/images/{filename}")]
+    public async Task<IActionResult> RemoveImage(Guid id, string filename, CancellationToken ct)
+    {
+        var updated = await notes.RemoveImageAsync(id, filename, ct);
+        return updated is null ? NotFound() : Ok(updated);
+    }
+
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SaveNoteRequest body, CancellationToken ct)
     {

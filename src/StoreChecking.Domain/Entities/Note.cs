@@ -21,6 +21,13 @@ public class Note : IOwnedByUser
 
     public string Content { get; set; } = "";
 
+    /// <summary>
+    /// Ảnh đính kèm — chỉ tên file, ảnh nằm trên đĩa trong thư mục `notes`.
+    /// <para>Tách hẳn khỏi kho ảnh của video tự sinh: để chung thì ảnh chụp màn hình hay
+    /// ảnh hoá đơn sẽ lọt vào video bán xe.</para>
+    /// </summary>
+    public string[] Images { get; set; } = [];
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
