@@ -99,7 +99,7 @@ var facebook = new StoreChecking.Infrastructure.Media.FacebookOptions
 {
     PageId = builder.Configuration["Facebook:PageId"],
     AccessToken = builder.Configuration["Facebook:AccessToken"],
-    AutoPost = builder.Configuration.GetValue<bool?>("Facebook:AutoPost") ?? true,
+    AutoPost = builder.Configuration.GetValue<bool?>("Facebook:AutoPost") ?? false,
     OrderLink = builder.Configuration["Facebook:OrderLink"],
     Hashtags = builder.Configuration["Facebook:Hashtags"],
     ApiVersion = builder.Configuration["Facebook:ApiVersion"] ?? "v23.0",

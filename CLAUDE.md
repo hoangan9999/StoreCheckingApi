@@ -111,9 +111,15 @@ Khai `FB_PAGE_ID` và `FB_PAGE_ACCESS_TOKEN` trong `.env` (lấy đúng cặp đ
 Vercel). Bỏ trống thì bỏ qua phần đăng, không báo lỗi gì. `FB_AUTOPOST=false` để chỉ đăng
 khi bấm nút.
 
-⚠️ **5 bài video/ngày lên cùng một Fanpage là nhiều.** Facebook hạ khả năng tiếp cận của
-page đăng dày, và người theo dõi thấy 5 video giống kiểu nhau trong một ngày cũng dễ chán.
-Nếu thấy tiếp cận tụt thì đặt `FB_AUTOPOST=false` rồi tự chọn 1-2 cái đáng đăng nhất.
+**Mặc định KHÔNG tự đăng** — quyết định 2026-08-31. Bấm nút trên từng video. Lý do: 5 bài
+video/ngày lên cùng một Fanpage là dày, Facebook hạ tiếp cận của page đăng kiểu đó, và
+chọn cái nào đáng đăng là việc nên để người quyết. `FB_AUTOPOST=true` để bật tự đăng cả mẻ.
+
+⚠️ **Token trên Vercel KHÔNG lấy lại được.** 13 biến ở đó đều là type `Secret`; cả UI, CLI
+lẫn API đều trả `[SENSITIVE]` — đã thử `vercel env pull --environment=production` và chính
+Vercel báo *"13 Secret values cannot be pulled"*. Nên `.env` của repo này phải có bản token
+RIÊNG, và lúc tạo phải lưu thêm một bản vào trình quản lý mật khẩu. Dùng **System User
+token** (Business Settings → Users → System Users) vì loại đó không hết hạn.
 
 ### Việc còn nợ
 

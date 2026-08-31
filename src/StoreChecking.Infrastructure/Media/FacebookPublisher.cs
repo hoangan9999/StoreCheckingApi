@@ -10,8 +10,13 @@ public sealed class FacebookOptions
     public string? PageId { get; set; }
     public string? AccessToken { get; set; }
 
-    /// <summary>Post finished videos without being asked.</summary>
-    public bool AutoPost { get; set; } = true;
+    /// <summary>
+    /// Post finished videos without being asked. Off by default.
+    /// <para>Five videos a day onto one page is a lot: Facebook lowers the reach of a page
+    /// that posts that heavily. Choosing which ones go up is a decision worth keeping with
+    /// the person, so the button is the normal way and this is the exception.</para>
+    /// </summary>
+    public bool AutoPost { get; set; }
 
     /// <summary>Where people order. Goes in every caption.</summary>
     public string? OrderLink { get; set; }

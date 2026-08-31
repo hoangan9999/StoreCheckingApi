@@ -126,8 +126,8 @@ services:
       # dựng bình thường. Cùng cặp khoá mà hàm trên Vercel đang dùng.
       Facebook__PageId: ${FB_PAGE_ID:-}
       Facebook__AccessToken: ${FB_PAGE_ACCESS_TOKEN:-}
-      # Đặt false để chỉ đăng khi bấm nút, không tự đăng.
-      Facebook__AutoPost: ${FB_AUTOPOST:-true}
+      # Mặc định KHÔNG tự đăng — bấm nút trên từng video. Đặt true để tự đăng cả mẻ.
+      Facebook__AutoPost: ${FB_AUTOPOST:-false}
       Facebook__OrderLink: ${ORDER_LINK:-}
       # The API applies db/*.sql itself at startup. Set SCHEMA_AUTOMIGRATE=false in .env
       # to switch that off — the escape hatch for getting the API up while the schema is
