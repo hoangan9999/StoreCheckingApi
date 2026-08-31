@@ -24,3 +24,8 @@ _migration/
 /backup.sql
 /*-backup.sql
 /*.dump
+
+# File kéo về từ Vercel (vercel env pull) — chứa token, không bao giờ commit.
+.env.vercel
+.env.local
+.env.*.local
