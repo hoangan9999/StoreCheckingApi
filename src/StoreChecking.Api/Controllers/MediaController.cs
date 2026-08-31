@@ -128,6 +128,31 @@ public sealed class MediaController(MediaService media, VideoJobQueue queue) : C
         return Accepted(new { queued = n });
     }
 
+    /// <summary>Đăng tay một video lên Fanpage.</summary>
+    /// <remarks>
+    /// Video dựng xong thì tự đăng, nên nút này là để đăng lại cái đã hỏng, hoặc để đăng
+    /// khi đã tắt tự đăng. Chờ tại chỗ chứ không đẩy ra nền: tải một file vài MB chỉ mất
+    /// vài giây, và người bấm cần biết ngay là Facebook có nhận hay không.
+    /// </remarks>
+    [HttpPost("videos/{id:guid}/post")]
+    public async Task<IActionResult> PostToFanpage(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var row = await media.PostToFanpageAsync(id, ct);
+            if (row is null) return NotFound();
+
+            // Đăng hỏng vẫn trả 200 kèm dòng đã cập nhật thì giao diện không biết là hỏng.
+            return row.PostedAt is null
+                ? BadRequest(new { error = row.PostError ?? "Không đăng được lên Fanpage." })
+                : Ok(row);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     /// <summary>Hôm nay còn thiếu mấy video nữa cho đủ mẻ.</summary>
     [HttpGet("videos/remaining-today")]
     public async Task<IActionResult> RemainingToday(CancellationToken ct) =>

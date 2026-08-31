@@ -10,7 +10,8 @@ public record MediaImageDto(
 public record GeneratedVideoDto(
     Guid Id, string? Filename, string Title, string Script, decimal? DurationSec,
     long? Bytes, string Status, string? Error, DateOnly BatchDay,
-    DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt, DateTimeOffset? DownloadedAt);
+    DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt, DateTimeOffset? DownloadedAt,
+    DateTimeOffset? PostedAt, string? FbPostId, string? PostError);
 
 public record DayCountDto(DateOnly Day, int Count);
 
@@ -29,6 +30,7 @@ public sealed class MediaService(
     IScriptWriter writer,
     IVoiceSynthesizer voice,
     IVideoRenderer renderer,
+    IFanpagePublisher fanpage,
     IUnitOfWork uow,
     ICurrentUser user)
 {
@@ -324,6 +326,12 @@ public sealed class MediaService(
             }
 
             await uow.SaveChangesAsync(ct);
+
+            // Đăng lên Fanpage sau khi đã lưu trạng thái `ready`.
+            //
+            // Nằm TRONG try nhưng tự nuốt lỗi của chính nó: video đã dựng xong rồi, đăng
+            // hỏng không được phép biến nó thành video hỏng — file vẫn tải về đăng tay được.
+            if (fanpage.Configured && fanpage.AutoPost) await TryPostAsync(row, ct);
         }
         catch (Exception ex)
         {
@@ -341,10 +349,67 @@ public sealed class MediaService(
         return ToDto(row);
     }
 
+    /// <summary>
+    /// Đăng một video lên Fanpage. Trả về false nếu không đăng được.
+    /// </summary>
+    /// <remarks>
+    /// Không bao giờ ném ra ngoài. Đăng bài là việc phụ sau khi video đã xong; hỏng thì ghi
+    /// lý do vào `post_error` để còn thấy mà thử lại, chứ không kéo theo cả lần dựng.
+    /// </remarks>
+    private async Task<bool> TryPostAsync(GeneratedVideo row, CancellationToken ct)
+    {
+        if (row.Filename is null) return false;
+
+        try
+        {
+            var post = await fanpage.PostVideoAsync(
+                storage.VideoPath(row.Filename), row.Title, fanpage.BuildCaption(row.Script), ct);
+
+            row.PostedAt = DateTimeOffset.UtcNow;
+            row.FbPostId = post.PostId;
+            row.PostError = null;
+        }
+        catch (Exception ex)
+        {
+            row.PostError = ex.Message.Length <= 500 ? ex.Message : ex.Message[..500];
+        }
+
+        // CancellationToken.None: nếu bị huỷ giữa chừng thì vẫn phải ghi lại kết quả, không
+        // thì bài đã lên Facebook mà ở đây không biết, và lần sau sẽ đăng lại lần nữa.
+        await uow.SaveChangesAsync(CancellationToken.None);
+        return row.PostedAt is not null;
+    }
+
+    /// <summary>
+    /// Đăng tay một video lên Fanpage — cho video tự đăng hỏng, hoặc lúc tắt tự đăng.
+    /// </summary>
+    public async Task<GeneratedVideoDto?> PostToFanpageAsync(Guid id, CancellationToken ct = default)
+    {
+        var row = await videos.FindAsync(id, ct);
+        if (row is null) return null;
+
+        if (row.Status != VideoStatus.Ready || row.Filename is null)
+            throw new InvalidOperationException("Video chưa dựng xong, chưa đăng được.");
+
+        // Đăng hai lần thì Fanpage có hai bài y hệt nhau, mà gỡ thì phải vào tận Facebook.
+        if (row.PostedAt is not null)
+            throw new InvalidOperationException("Video này đã đăng lên Fanpage rồi.");
+
+        if (!fanpage.Configured)
+            throw new InvalidOperationException(
+                "Chưa khai FB_PAGE_ID / FB_PAGE_ACCESS_TOKEN cho máy chủ.");
+
+        await TryPostAsync(row, ct);
+
+        // Lỗi nằm trong `post_error` của dòng trả về, nên bên gọi vẫn thấy vì sao hỏng.
+        return ToDto(row);
+    }
+
     private static MediaImageDto ToDto(MediaImage r) =>
         new(r.Id, r.Filename, r.OriginalName, r.Bytes, r.UseCount, r.UploadedAt);
 
     private static GeneratedVideoDto ToDto(GeneratedVideo r) =>
         new(r.Id, r.Filename, r.Title, r.Script, r.DurationSec, r.Bytes,
-            r.Status, r.Error, r.BatchDay, r.CreatedAt, r.FinishedAt, r.DownloadedAt);
+            r.Status, r.Error, r.BatchDay, r.CreatedAt, r.FinishedAt, r.DownloadedAt,
+            r.PostedAt, r.FbPostId, r.PostError);
 }

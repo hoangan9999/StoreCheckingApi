@@ -93,6 +93,28 @@ có lớp mapper riêng vì API trả **camelCase** còn model Angular dùng **s
 Một chỗ cố ý không dùng thứ tự của server: `getAllStock` sắp lại ở client bằng
 `localeCompare`, vì API bật `InvariantGlobalization` nên không biết cách sắp chữ tiếng Việt.
 
+### Đăng video lên Fanpage — 2026-08-31
+
+Video dựng xong là tự đăng lên Fanpage. Caption = đúng kịch bản AI viết, cộng link đặt
+hàng và một dòng mời inbox. **KHÔNG có giá** — một video khoe 10-15 chiếc xe khác nhau,
+in một con số lên đó là sai với phần lớn số xe trong video.
+
+File được đẩy thẳng dạng multipart lên `graph-video.facebook.com`, không đưa URL cho
+Facebook tự tải. Địa chỉ công khai duy nhất của API này nằm sau Tailscale Funnel và đòi
+token, mà Facebook thì không có cách nào gửi token đó.
+
+Đăng hỏng **không** làm video thành hỏng: `status` vẫn `ready`, lý do nằm ở cột
+`post_error` riêng, file vẫn tải về đăng tay được. Nút "Đăng Fanpage" trong tab Tiện ích
+để đăng lại.
+
+Khai `FB_PAGE_ID` và `FB_PAGE_ACCESS_TOKEN` trong `.env` (lấy đúng cặp đang dùng trên
+Vercel). Bỏ trống thì bỏ qua phần đăng, không báo lỗi gì. `FB_AUTOPOST=false` để chỉ đăng
+khi bấm nút.
+
+⚠️ **5 bài video/ngày lên cùng một Fanpage là nhiều.** Facebook hạ khả năng tiếp cận của
+page đăng dày, và người theo dõi thấy 5 video giống kiểu nhau trong một ngày cũng dễ chán.
+Nếu thấy tiếp cận tụt thì đặt `FB_AUTOPOST=false` rồi tự chọn 1-2 cái đáng đăng nhất.
+
 ### Việc còn nợ
 
 - [ ] **Đổi 4 thứ đã lộ trong lịch sử chat** — nên làm sớm:

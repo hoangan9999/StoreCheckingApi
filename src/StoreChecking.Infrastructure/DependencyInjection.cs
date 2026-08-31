@@ -27,7 +27,8 @@ public static class DependencyInjection
     /// </param>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services, string connectionString, TimeSpan warmupInterval,
-        string mediaRoot, string geminiApiKey, string ttsUrl)
+        string mediaRoot, string geminiApiKey, string ttsUrl,
+        StoreChecking.Infrastructure.Media.FacebookOptions facebook)
     {
         // Pool settings applied before anything else sees the string, so the migrator and
         // the DbContext agree on how connections are kept.
@@ -59,6 +60,13 @@ public static class DependencyInjection
             sp.GetRequiredService<IHttpClientFactory>(),
             sp.GetRequiredService<ILogger<StoreChecking.Infrastructure.Media.AdamVoice>>(),
             ttsUrl));
+        // Đăng video lên Fanpage. Thiếu khoá thì vẫn đăng ký bình thường — bên trong tự
+        // báo Configured = false và MediaService bỏ qua, thay vì làm hỏng lúc khởi động.
+        services.AddSingleton<IFanpagePublisher>(sp => new StoreChecking.Infrastructure.Media.FacebookPublisher(
+            sp.GetRequiredService<IHttpClientFactory>(),
+            sp.GetRequiredService<ILogger<StoreChecking.Infrastructure.Media.FacebookPublisher>>(),
+            facebook));
+
         services.AddSingleton<IScriptWriter>(sp => new StoreChecking.Infrastructure.Media.GeminiScriptWriter(
             sp.GetRequiredService<IHttpClientFactory>(),
             sp.GetRequiredService<IVideoRenderer>(),

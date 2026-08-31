@@ -61,4 +61,18 @@ public class GeneratedVideo : IOwnedByUser
     /// also says when.</para>
     /// </summary>
     public DateTimeOffset? DownloadedAt { get; set; }
+
+    /// <summary>When it went up on the Fanpage, or null if it has not.</summary>
+    public DateTimeOffset? PostedAt { get; set; }
+
+    /// <summary>Facebook's id for the post, so it can be opened and checked.</summary>
+    public string? FbPostId { get; set; }
+
+    /// <summary>
+    /// Why posting failed, in Facebook's own words.
+    /// <para>Kept apart from <see cref="Error"/> on purpose: a video whose upload to the
+    /// Fanpage failed is still a finished video that can be downloaded and posted by hand,
+    /// so it must not be marked broken.</para>
+    /// </summary>
+    public string? PostError { get; set; }
 }

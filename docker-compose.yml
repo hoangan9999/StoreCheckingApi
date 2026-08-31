@@ -120,6 +120,15 @@ services:
       # Giọng Adam chạy TRÊN CHÍNH MÁY NÀY, ngoài Docker. host.docker.internal là đường từ
       # trong container ra máy thật — đã thử từ trong container, trả 200.
       Media__TtsUrl: http://host.docker.internal:5050/
+
+      # ---------- Đăng video lên Fanpage ----------
+      # Video dựng xong là tự đăng. Thiếu hai biến đầu thì bỏ qua phần đăng, video vẫn
+      # dựng bình thường. Cùng cặp khoá mà hàm trên Vercel đang dùng.
+      Facebook__PageId: ${FB_PAGE_ID:-}
+      Facebook__AccessToken: ${FB_PAGE_ACCESS_TOKEN:-}
+      # Đặt false để chỉ đăng khi bấm nút, không tự đăng.
+      Facebook__AutoPost: ${FB_AUTOPOST:-true}
+      Facebook__OrderLink: ${ORDER_LINK:-}
       # The API applies db/*.sql itself at startup. Set SCHEMA_AUTOMIGRATE=false in .env
       # to switch that off — the escape hatch for getting the API up while the schema is
       # being sorted out by hand. Declared here because .env only substitutes into this

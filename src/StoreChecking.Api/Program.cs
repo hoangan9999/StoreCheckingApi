@@ -94,8 +94,20 @@ var mediaRoot = builder.Configuration["Media:Root"] ?? "/data/media";
 var geminiKey = builder.Configuration["Media:GeminiApiKey"] ?? "";
 var ttsUrl = builder.Configuration["Media:TtsUrl"] ?? "http://host.docker.internal:5050/";
 
+// Đăng video lên Fanpage. Thiếu khoá thì bỏ qua phần đăng, video vẫn dựng như thường.
+var facebook = new StoreChecking.Infrastructure.Media.FacebookOptions
+{
+    PageId = builder.Configuration["Facebook:PageId"],
+    AccessToken = builder.Configuration["Facebook:AccessToken"],
+    AutoPost = builder.Configuration.GetValue<bool?>("Facebook:AutoPost") ?? true,
+    OrderLink = builder.Configuration["Facebook:OrderLink"],
+    Hashtags = builder.Configuration["Facebook:Hashtags"],
+    ApiVersion = builder.Configuration["Facebook:ApiVersion"] ?? "v23.0",
+};
+
 builder.Services.AddInfrastructure(
-    connString, TimeSpan.FromSeconds(Math.Max(warmupSeconds, 0)), mediaRoot, geminiKey, ttsUrl);
+    connString, TimeSpan.FromSeconds(Math.Max(warmupSeconds, 0)), mediaRoot, geminiKey, ttsUrl,
+    facebook);
 builder.Services.AddSingleton<LastRequestClock>();
 
 builder.Services.AddControllers();
