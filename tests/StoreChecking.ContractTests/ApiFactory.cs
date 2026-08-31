@@ -39,6 +39,32 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("Cors__Origins", "https://example.test");
         Environment.SetEnvironmentVariable("Swagger__Enabled", "false");
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
+
+        // Ảnh và video ghi vào thư mục tạm, KHÔNG phải Media:Root thật.
+        //
+        // Mặc định là /data/media, hợp với volume trong Docker và tạo được trên Windows
+        // (thành C:\data\media). Trên Linux thì không: tài khoản chạy CI không có quyền
+        // tạo /data, DiskMediaStorage ném ngay trong hàm dựng, và vì NotesService nhận
+        // IMediaStorage nên MỌI test ghi chú đổ theo. Đã dựng lại đúng cảnh đó trong một
+        // container Linux chạy bằng uid 1001: "mkdir: cannot create directory '/data'".
+        MediaRoot = Path.Combine(Path.GetTempPath(), "storechecking-tests", Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("Media__Root", MediaRoot);
+
+        // Không có khoá thì không đăng gì cả — nhưng nói rõ ra ở đây, để một cái máy có
+        // sẵn biến môi trường FB không biến test thành lần đăng thật lên Fanpage.
+        Environment.SetEnvironmentVariable("Facebook__PageId", "");
+        Environment.SetEnvironmentVariable("Facebook__AccessToken", "");
+        Environment.SetEnvironmentVariable("Facebook__AutoPost", "false");
+    }
+
+    /// <summary>Thư mục ảnh/video của lần chạy test này. Xoá khi chạy xong.</summary>
+    private static string MediaRoot { get; set; } = "";
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing && MediaRoot.Length > 0)
+            try { Directory.Delete(MediaRoot, recursive: true); } catch { /* thư mục tạm */ }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
