@@ -82,6 +82,7 @@ public static class DependencyInjection
         services.AddScoped<IPackingVideoRepository, PackingVideoRepository>();
         services.AddScoped<IMediaImageRepository, MediaImageRepository>();
         services.AddScoped<IGeneratedVideoRepository, GeneratedVideoRepository>();
+        services.AddScoped<IAppSettingRepository, AppSettingRepository>();
         services.AddScoped<IExpenseCategoryRepository, ExpenseCategoryRepository>();
         services.AddScoped<IExpenseRepository, ExpenseRepository>();
         services.AddScoped<IMonthlyIncomeRepository, MonthlyIncomeRepository>();

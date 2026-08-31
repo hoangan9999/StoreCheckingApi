@@ -111,9 +111,14 @@ Khai `FB_PAGE_ID` và `FB_PAGE_ACCESS_TOKEN` trong `.env` (lấy đúng cặp đ
 Vercel). Bỏ trống thì bỏ qua phần đăng, không báo lỗi gì. `FB_AUTOPOST=false` để chỉ đăng
 khi bấm nút.
 
-**Mặc định KHÔNG tự đăng** — quyết định 2026-08-31. Bấm nút trên từng video. Lý do: 5 bài
-video/ngày lên cùng một Fanpage là dày, Facebook hạ tiếp cận của page đăng kiểu đó, và
-chọn cái nào đáng đăng là việc nên để người quyết. `FB_AUTOPOST=true` để bật tự đăng cả mẻ.
+**Tự đăng mặc định BẬT**, tắt bằng checkbox trong app (Tiện ích → Video tự động).
+
+Công tắc nằm ở bảng `app_settings` (khoá `video.autoPost`), KHÔNG phải biến môi trường:
+đổi bằng một cái tick, không phải sửa `.env` rồi dựng lại container. Chưa có dòng nào thì
+coi như bật — người dùng muốn mặc định bật.
+
+⚠️ Vẫn nên để mắt: 5 bài video/ngày lên cùng một Fanpage là dày, Facebook hạ tiếp cận của
+page đăng kiểu đó. Thấy tiếp cận tụt thì bỏ tick rồi tự chọn 1-2 cái đáng đăng nhất.
 
 ⚠️ **Token trên Vercel KHÔNG lấy lại được.** 13 biến ở đó đều là type `Secret`; cả UI, CLI
 lẫn API đều trả `[SENSITIVE]` — đã thử `vercel env pull --environment=production` và chính

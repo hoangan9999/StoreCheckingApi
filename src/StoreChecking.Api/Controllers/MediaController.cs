@@ -128,6 +128,18 @@ public sealed class MediaController(MediaService media, VideoJobQueue queue) : C
         return Accepted(new { queued = n });
     }
 
+    /// <summary>Cài đặt của phần video — hiện chỉ có công tắc tự đăng.</summary>
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSettings(CancellationToken ct) =>
+        Ok(await media.GetSettingsAsync(ct));
+
+    /// <summary>Bật/tắt tự đăng lên Fanpage.</summary>
+    [HttpPut("settings/auto-post")]
+    public async Task<IActionResult> SetAutoPost([FromBody] AutoPostRequest body, CancellationToken ct) =>
+        Ok(await media.SetAutoPostAsync(body.AutoPost, ct));
+
+    public record AutoPostRequest(bool AutoPost);
+
     /// <summary>Đăng tay một video lên Fanpage.</summary>
     /// <remarks>
     /// Video dựng xong thì tự đăng, nên nút này là để đăng lại cái đã hỏng, hoặc để đăng

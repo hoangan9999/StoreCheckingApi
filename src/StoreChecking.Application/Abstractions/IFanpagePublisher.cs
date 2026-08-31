@@ -19,9 +19,6 @@ public interface IFanpagePublisher
     /// <summary>False when no page id or token is configured; nothing will be posted.</summary>
     bool Configured { get; }
 
-    /// <summary>Whether finished videos should go up on their own.</summary>
-    bool AutoPost { get; }
-
     /// <summary>
     /// Uploads one video file with its caption.
     /// <para>Throws with Facebook's own message when the upload is refused — the caller

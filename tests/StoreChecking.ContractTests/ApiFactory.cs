@@ -54,7 +54,6 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         // sẵn biến môi trường FB không biến test thành lần đăng thật lên Fanpage.
         Environment.SetEnvironmentVariable("Facebook__PageId", "");
         Environment.SetEnvironmentVariable("Facebook__AccessToken", "");
-        Environment.SetEnvironmentVariable("Facebook__AutoPost", "false");
     }
 
     /// <summary>Thư mục ảnh/video của lần chạy test này. Xoá khi chạy xong.</summary>

@@ -15,6 +15,13 @@ public record GeneratedVideoDto(
 
 public record DayCountDto(DateOnly Day, int Count);
 
+/// <param name="AutoPost">Dựng xong thì đăng luôn lên Fanpage.</param>
+/// <param name="FanpageReady">
+/// Máy chủ có khoá Facebook hay không. Giao diện cần biết để nói rõ vì sao bật mà không
+/// đăng được, thay vì để người dùng bật rồi ngồi chờ một bài không bao giờ lên.
+/// </param>
+public record VideoSettingsDto(bool AutoPost, bool FanpageReady);
+
 public record MediaPage<T>(int Total, int Limit, int Offset, IReadOnlyList<T> Items);
 
 /// <summary>
@@ -31,6 +38,7 @@ public sealed class MediaService(
     IVoiceSynthesizer voice,
     IVideoRenderer renderer,
     IFanpagePublisher fanpage,
+    IAppSettingRepository settings,
     IUnitOfWork uow,
     ICurrentUser user)
 {
@@ -331,7 +339,7 @@ public sealed class MediaService(
             //
             // Nằm TRONG try nhưng tự nuốt lỗi của chính nó: video đã dựng xong rồi, đăng
             // hỏng không được phép biến nó thành video hỏng — file vẫn tải về đăng tay được.
-            if (fanpage.Configured && fanpage.AutoPost) await TryPostAsync(row, ct);
+            if (fanpage.Configured && await AutoPostAsync(ct)) await TryPostAsync(row, ct);
         }
         catch (Exception ex)
         {
@@ -347,6 +355,41 @@ public sealed class MediaService(
         finally { try { File.Delete(audio); } catch { /* file tạm */ } }
 
         return ToDto(row);
+    }
+
+    // ---------- Cài đặt ----------
+
+    /// <summary>
+    /// Có tự đăng lên Fanpage sau khi dựng xong không. Mặc định BẬT.
+    /// </summary>
+    /// <remarks>
+    /// Đọc từ database chứ không phải cấu hình: đổi bằng một cái checkbox trong app, không
+    /// phải sửa .env rồi dựng lại container.
+    /// </remarks>
+    private async Task<bool> AutoPostAsync(CancellationToken ct)
+    {
+        var row = await settings.FindAsync(SettingKeys.VideoAutoPost, ct);
+        return row is null || row.Value == "true";
+    }
+
+    public async Task<VideoSettingsDto> GetSettingsAsync(CancellationToken ct = default) =>
+        new(await AutoPostAsync(ct), fanpage.Configured);
+
+    public async Task<VideoSettingsDto> SetAutoPostAsync(bool on, CancellationToken ct = default)
+    {
+        var row = await settings.FindAsync(SettingKeys.VideoAutoPost, ct);
+
+        if (row is null)
+        {
+            row = new AppSetting { UserId = user.Id, Key = SettingKeys.VideoAutoPost };
+            settings.Add(row);
+        }
+
+        row.Value = on ? "true" : "false";
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await uow.SaveChangesAsync(ct);
+
+        return new VideoSettingsDto(on, fanpage.Configured);
     }
 
     /// <summary>

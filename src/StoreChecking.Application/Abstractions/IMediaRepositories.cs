@@ -100,3 +100,10 @@ public interface IMediaStorage
     /// </summary>
     IReadOnlyList<string> ListVideoFiles();
 }
+
+/// <summary>Switches a person can flip from the app.</summary>
+public interface IAppSettingRepository
+{
+    Task<AppSetting?> FindAsync(string key, CancellationToken ct = default);
+    void Add(AppSetting row);
+}
