@@ -20,7 +20,13 @@ public record DayCountDto(DateOnly Day, int Count);
 /// Máy chủ có khoá Facebook hay không. Giao diện cần biết để nói rõ vì sao bật mà không
 /// đăng được, thay vì để người dùng bật rồi ngồi chờ một bài không bao giờ lên.
 /// </param>
-public record VideoSettingsDto(bool AutoPost, bool FanpageReady);
+public record VideoSettingsDto(
+    bool AutoPost, bool FanpageReady, bool MakeVideos, bool MakePosts);
+
+public record GeneratedPostDto(
+    Guid Id, Guid ImageId, string ImageFilename, string Title, string Content,
+    string Status, string? Error, DateOnly BatchDay, DateTimeOffset CreatedAt,
+    DateTimeOffset? PostedAt, string? FbPostId, string? PostError);
 
 public record MediaPage<T>(int Total, int Limit, int Offset, IReadOnlyList<T> Items);
 
@@ -39,6 +45,7 @@ public sealed class MediaService(
     IVideoRenderer renderer,
     IFanpagePublisher fanpage,
     IAppSettingRepository settings,
+    IGeneratedPostRepository posts,
     IUnitOfWork uow,
     ICurrentUser user)
 {
@@ -372,16 +379,30 @@ public sealed class MediaService(
         return row is null || row.Value == "true";
     }
 
-    public async Task<VideoSettingsDto> GetSettingsAsync(CancellationToken ct = default) =>
-        new(await AutoPostAsync(ct), fanpage.Configured);
-
-    public async Task<VideoSettingsDto> SetAutoPostAsync(bool on, CancellationToken ct = default)
+    /// <summary>Một công tắc bật/tắt. Chưa có dòng nào thì coi như BẬT.</summary>
+    private async Task<bool> OnAsync(string key, CancellationToken ct)
     {
-        var row = await settings.FindAsync(SettingKeys.VideoAutoPost, ct);
+        var row = await settings.FindAsync(key, ct);
+        return row is null || row.Value == "true";
+    }
+
+    public async Task<VideoSettingsDto> GetSettingsAsync(CancellationToken ct = default) =>
+        new(await AutoPostAsync(ct), fanpage.Configured,
+            await OnAsync(SettingKeys.MakeVideos, ct),
+            await OnAsync(SettingKeys.MakePosts, ct));
+
+    /// <summary>Đặt một công tắc rồi trả về toàn bộ cài đặt như nó vừa thành.</summary>
+    public async Task<VideoSettingsDto> SetSwitchAsync(
+        string key, bool on, CancellationToken ct = default)
+    {
+        if (key is not (SettingKeys.VideoAutoPost or SettingKeys.MakeVideos or SettingKeys.MakePosts))
+            throw new InvalidOperationException($"Không có cài đặt tên \"{key}\".");
+
+        var row = await settings.FindAsync(key, ct);
 
         if (row is null)
         {
-            row = new AppSetting { UserId = user.Id, Key = SettingKeys.VideoAutoPost };
+            row = new AppSetting { UserId = user.Id, Key = key };
             settings.Add(row);
         }
 
@@ -389,7 +410,7 @@ public sealed class MediaService(
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await uow.SaveChangesAsync(ct);
 
-        return new VideoSettingsDto(on, fanpage.Configured);
+        return await GetSettingsAsync(ct);
     }
 
     /// <summary>
@@ -446,6 +467,178 @@ public sealed class MediaService(
 
         // Lỗi nằm trong `post_error` của dòng trả về, nên bên gọi vẫn thấy vì sao hỏng.
         return ToDto(row);
+    }
+
+    // ---------- Bài đăng Fanpage ----------
+
+    /// <summary>Bài mỗi ngày. Cùng số với video, và đăng theo cùng những khung giờ đó.</summary>
+    public const int PostsPerDay = 5;
+
+    /// <summary>
+    /// Viết cả mẻ bài của hôm nay trong MỘT lượt gọi Gemini.
+    /// </summary>
+    /// <remarks>
+    /// Mỗi bài một ảnh, và cả năm ảnh đi trong cùng một lượt. Hạn mức Gemini bị chặn ở SỐ
+    /// LƯỢT GỌI (20/ngày) chứ không phải dung lượng, nên gọi riêng từng bài sẽ lấy mất 5
+    /// lượt của tab tiếng Anh để làm đúng việc mà một lượt làm xong.
+    /// <para>Không làm gì nếu hôm nay đã có mẻ — gọi lại được, không sinh bài trùng.</para>
+    /// </remarks>
+    public async Task<int> WriteTodaysPostsAsync(CancellationToken ct = default)
+    {
+        var day = Today();
+        if (await posts.CountForDayAsync(day, ct) > 0) return 0;
+
+        // Xin dư rồi lọc theo file có thật, y như bên video: một dòng có thể trỏ tới file đã
+        // biến mất, và những dòng đó có use_count = 0 nên luôn được bộ chọn ưu tiên.
+        var candidates = await images.PickLeastUsedAsync(PostsPerDay * 3, ct);
+
+        var usable = new List<(MediaImage Image, string Path)>();
+        foreach (var c in candidates)
+        {
+            if (usable.Count >= PostsPerDay) break;
+            if (storage.ImagePath(c.Filename) is { } p) usable.Add((c, p));
+        }
+
+        if (usable.Count == 0)
+            throw new InvalidOperationException("Kho ảnh chưa có ảnh nào dùng được để viết bài.");
+
+        var written = await writer.WritePostsAsync(usable.Select(u => u.Path).ToList(), ct);
+
+        // Ghép theo VỊ TRÍ. Gemini có thể trả về ít hơn số ảnh đã gửi, nên lấy phần chung —
+        // thừa lại vài tấm ảnh thì chúng chỉ đơn giản là chưa được dùng lần này.
+        var n = Math.Min(written.Count, usable.Count);
+
+        for (var i = 0; i < n; i++)
+        {
+            posts.Add(new GeneratedPost
+            {
+                UserId = user.Id,
+                ImageId = usable[i].Image.Id,
+                Title = written[i].Title,
+                Content = written[i].Content,
+                Status = PostStatus.Ready,
+                BatchDay = day,
+                // Cách nhau một tích để thứ tự đăng trong ngày là cố định, không phụ thuộc
+                // vào việc database sắp xếp các dòng cùng thời điểm thế nào.
+                CreatedAt = DateTimeOffset.UtcNow.AddTicks(i),
+            });
+
+            usable[i].Image.UseCount++;
+            usable[i].Image.LastUsedAt = DateTimeOffset.UtcNow;
+        }
+
+        await uow.SaveChangesAsync(ct);
+        return n;
+    }
+
+    /// <summary>
+    /// Đăng bài tiếp theo trong ngày lên Fanpage. Trả về false khi không còn gì để đăng.
+    /// </summary>
+    public async Task<bool> PostNextAsync(CancellationToken ct = default)
+    {
+        var row = await posts.NextUnpostedAsync(Today(), ct);
+        if (row is null) return false;
+
+        return await TryPostPhotoAsync(row, ct);
+    }
+
+    /// <summary>Đăng tay một bài cụ thể.</summary>
+    public async Task<GeneratedPostDto?> PostArticleToFanpageAsync(Guid id, CancellationToken ct = default)
+    {
+        var row = await posts.FindAsync(id, ct);
+        if (row is null) return null;
+
+        if (row.Status != PostStatus.Ready)
+            throw new InvalidOperationException("Bài chưa viết xong, chưa đăng được.");
+
+        // Đăng hai lần thì Fanpage có hai bài y hệt, mà gỡ thì phải vào tận Facebook.
+        if (row.PostedAt is not null)
+            throw new InvalidOperationException("Bài này đã đăng lên Fanpage rồi.");
+
+        if (!fanpage.Configured)
+            throw new InvalidOperationException("Chưa khai FB_PAGE_ID / FB_PAGE_ACCESS_TOKEN cho máy chủ.");
+
+        await TryPostPhotoAsync(row, ct);
+        return await ToDtoAsync(row, ct);
+    }
+
+    /// <summary>Đăng một bài. Không bao giờ ném — lý do hỏng ghi vào `post_error`.</summary>
+    private async Task<bool> TryPostPhotoAsync(GeneratedPost row, CancellationToken ct)
+    {
+        var image = await images.FindAsync(row.ImageId, ct);
+        var path = image is null ? null : storage.ImagePath(image.Filename);
+
+        if (path is null)
+        {
+            row.PostError = "Ảnh của bài này không còn trên đĩa.";
+            await uow.SaveChangesAsync(CancellationToken.None);
+            return false;
+        }
+
+        try
+        {
+            var post = await fanpage.PostPhotoAsync(path, fanpage.BuildCaption(row.Content), ct);
+            row.PostedAt = DateTimeOffset.UtcNow;
+            row.FbPostId = post.PostId;
+            row.PostError = null;
+        }
+        catch (Exception ex)
+        {
+            row.PostError = ex.Message.Length <= 500 ? ex.Message : ex.Message[..500];
+        }
+
+        // CancellationToken.None: bị huỷ giữa chừng thì vẫn phải ghi kết quả, không thì bài
+        // đã lên Facebook mà ở đây không biết, và lần sau sẽ đăng lại lần nữa.
+        await uow.SaveChangesAsync(CancellationToken.None);
+        return row.PostedAt is not null;
+    }
+
+    public async Task<MediaPage<GeneratedPostDto>> ListPostsAsync(
+        DateOnly? day, int? limit, int? offset, CancellationToken ct = default)
+    {
+        var take = Math.Clamp(limit ?? DefaultPage, 1, MaxPage);
+        var skip = Math.Max(offset ?? 0, 0);
+
+        var (total, rows) = await posts.ListAsync(day, skip, take, ct);
+
+        var items = new List<GeneratedPostDto>(rows.Count);
+        foreach (var r in rows) items.Add(await ToDtoAsync(r, ct));
+
+        return new MediaPage<GeneratedPostDto>(total, take, skip, items);
+    }
+
+    public async Task<int> PostsMadeTodayAsync(CancellationToken ct = default) =>
+        await posts.CountPostedForDayAsync(Today(), ct);
+
+    /// <summary>Có tự viết bài mỗi ngày không.</summary>
+    public Task<bool> MakePostsEnabledAsync(CancellationToken ct = default) =>
+        OnAsync(SettingKeys.MakePosts, ct);
+
+    /// <summary>Có tự dựng video mỗi ngày không.</summary>
+    public Task<bool> MakeVideosEnabledAsync(CancellationToken ct = default) =>
+        OnAsync(SettingKeys.MakeVideos, ct);
+
+    public Task<bool> AutoPostEnabledAsync(CancellationToken ct = default) => AutoPostAsync(ct);
+
+    /// <summary>Dọn bài cũ, cùng mốc ngày với video.</summary>
+    public async Task<int> CleanupOldPostsAsync(int keepDays, CancellationToken ct = default)
+    {
+        var cutoff = Today().AddDays(-Math.Max(keepDays, 1));
+        var old = await posts.ListOlderThanAsync(cutoff, ct);
+        if (old.Count == 0) return 0;
+
+        posts.RemoveRange(old);
+        await uow.SaveChangesAsync(ct);
+        return old.Count;
+    }
+
+    /// <summary>Tên file ảnh đi kèm, để giao diện hiện được ảnh của bài.</summary>
+    private async Task<GeneratedPostDto> ToDtoAsync(GeneratedPost r, CancellationToken ct)
+    {
+        var image = await images.FindAsync(r.ImageId, ct);
+        return new GeneratedPostDto(
+            r.Id, r.ImageId, image?.Filename ?? "", r.Title, r.Content,
+            r.Status, r.Error, r.BatchDay, r.CreatedAt, r.PostedAt, r.FbPostId, r.PostError);
     }
 
     private static MediaImageDto ToDto(MediaImage r) =>

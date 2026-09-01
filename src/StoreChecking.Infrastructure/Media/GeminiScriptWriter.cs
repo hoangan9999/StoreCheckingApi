@@ -153,6 +153,130 @@ public sealed class GeminiScriptWriter(
         }
     }
 
+    /// <summary>
+    /// Lời nhắc cho bài đăng Fanpage. Khác hẳn kịch bản video: bài đọc bằng mắt chứ không
+    /// nghe bằng tai, nên ngắt dòng và emoji có tác dụng, còn câu văn dài thì không.
+    /// </summary>
+    private const string PostPrompt =
+        "Bạn viết bài đăng Facebook cho một shop bán xe mô hình tĩnh tỉ lệ 1:64 " +
+        "(Hot Wheels, Matchbox, Tomica, Mini GT) tại Việt Nam, tên shop là Hoàng An Diecast.\n\n" +
+        "Mỗi ẢNH gửi kèm là MỘT sản phẩm. Với mỗi ảnh, hãy:\n" +
+        "- Nhìn kỹ và nhận ra đó là mẫu xe gì (hãng xe thật, đời xe, màu, dòng Hot Wheels nếu nhận ra).\n" +
+        "- Viết một bài đăng riêng cho nó.\n\n" +
+        "Yêu cầu từng bài:\n" +
+        "- Tiếng Việt, giọng người bán thật đang khoe hàng, vui và gần gũi.\n" +
+        "- Câu đầu phải hút mắt để người ta dừng lướt.\n" +
+        "- Dài 4 đến 7 dòng ngắn, có ngắt dòng cho dễ đọc.\n" +
+        "- Được dùng vài emoji hợp cảnh, đừng lạm dụng.\n" +
+        "- Kể được một chi tiết đáng nói về chiếc xe thật đó (lịch sử, động cơ, vì sao dân chơi thích).\n" +
+        "- TUYỆT ĐỐI KHÔNG nhắc tới giá và không bịa ra con số nào.\n" +
+        "- KHÔNG viết link, KHÔNG viết 'inbox', KHÔNG viết hashtag — những phần đó được ghép riêng.\n" +
+        "- Nếu KHÔNG chắc chắn là xe gì thì viết theo những gì NHÌN THẤY (kiểu dáng, màu, chi tiết) " +
+        "và tuyệt đối không đoán bừa tên xe.\n" +
+        "- Các bài phải KHÁC NHAU rõ rệt: khác câu mở, khác nhịp, khác góc kể.\n\n" +
+        "Trả về một mảng, đúng thứ tự các ảnh đã gửi, mỗi phần tử ứng với một ảnh.";
+
+    public async Task<IReadOnlyList<PostContent>> WritePostsAsync(
+        IReadOnlyList<string> imagePaths, CancellationToken ct = default)
+    {
+        if (imagePaths.Count == 0) throw new InvalidOperationException("Không có ảnh nào để viết bài.");
+
+        var parts = new List<object> { new { text = PostPrompt } };
+        var thumbs = new List<string>();
+
+        try
+        {
+            foreach (var path in imagePaths)
+            {
+                var thumb = await renderer.MakeThumbAsync(path, ThumbWidth, ct);
+                thumbs.Add(thumb);
+                parts.Add(new
+                {
+                    inline_data = new
+                    {
+                        mime_type = "image/jpeg",
+                        data = Convert.ToBase64String(await File.ReadAllBytesAsync(thumb, ct)),
+                    },
+                });
+            }
+
+            var body = new
+            {
+                contents = new[] { new { parts } },
+                generationConfig = new
+                {
+                    temperature = 1.15,
+                    responseMimeType = "application/json",
+                    responseSchema = new
+                    {
+                        type = "ARRAY",
+                        items = new
+                        {
+                            type = "OBJECT",
+                            properties = new
+                            {
+                                title = new { type = "STRING" },
+                                content = new { type = "STRING" },
+                            },
+                            required = new[] { "title", "content" },
+                        },
+                    },
+                },
+            };
+
+            var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+
+            using var client = http.CreateClient();
+            // Dài hơn video: một lượt này viết cả năm bài từ năm ảnh.
+            client.Timeout = TimeSpan.FromMinutes(5);
+
+            using var res = await client.PostAsJsonAsync(url, body, ct);
+            var text = await res.Content.ReadAsStringAsync(ct);
+
+            // Khoá nằm trong URL, nên URL tuyệt đối không được lọt vào log.
+            if (!res.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Gemini trả {(int)res.StatusCode}: {Trim(text)}");
+
+            return ParsePosts(text, imagePaths.Count);
+        }
+        finally
+        {
+            foreach (var t in thumbs) { try { File.Delete(t); } catch { /* ảnh tạm, kệ */ } }
+        }
+    }
+
+    private IReadOnlyList<PostContent> ParsePosts(string body, int expected)
+    {
+        using var doc = JsonDocument.Parse(body);
+
+        var inner = doc.RootElement
+            .GetProperty("candidates")[0]
+            .GetProperty("content")
+            .GetProperty("parts")[0]
+            .GetProperty("text")
+            .GetString() ?? "";
+
+        using var payload = JsonDocument.Parse(inner);
+
+        var list = new List<PostContent>();
+        foreach (var item in payload.RootElement.EnumerateArray())
+        {
+            var title = item.TryGetProperty("title", out var t) ? t.GetString()?.Trim() ?? "" : "";
+            var content = item.TryGetProperty("content", out var c) ? c.GetString()?.Trim() ?? "" : "";
+            if (content.Length > 0) list.Add(new PostContent(title, content));
+        }
+
+        if (list.Count == 0) throw new InvalidOperationException("Gemini không trả về bài nào.");
+
+        // Thiếu thì báo, KHÔNG ném: bốn bài dùng được vẫn hơn hẳn hỏng cả mẻ, và bên gọi
+        // ghép theo vị trí nên chỉ đơn giản là dư lại vài tấm ảnh chưa dùng.
+        if (list.Count != expected)
+            log.LogWarning("Xin {Want} bài, Gemini trả {Got}. Dùng {Got} bài.", expected, list.Count, list.Count);
+
+        log.LogInformation("Đã viết {N} bài đăng trong một lượt gọi.", list.Count);
+        return list;
+    }
+
     private VideoScript Parse(string body)
     {
         using var doc = JsonDocument.Parse(body);

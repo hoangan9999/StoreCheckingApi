@@ -27,6 +27,9 @@ public interface IFanpagePublisher
     Task<FanpagePost> PostVideoAsync(
         string filePath, string title, string caption, CancellationToken ct = default);
 
+    /// <summary>Đăng một tấm ảnh kèm nội dung. Cùng cách xử lý lỗi như video.</summary>
+    Task<FanpagePost> PostPhotoAsync(string filePath, string caption, CancellationToken ct = default);
+
     /// <summary>
     /// The caption for a video: what the AI wrote, then the order link and an invitation
     /// to message the page. Deliberately WITHOUT a price — a video covers ten to fifteen

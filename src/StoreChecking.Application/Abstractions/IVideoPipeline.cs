@@ -3,6 +3,9 @@ namespace StoreChecking.Application.Abstractions;
 /// <summary>What the AI came back with for one video.</summary>
 public record VideoScript(string Title, string Script);
 
+/// <summary>Nội dung AI viết cho một bài đăng Fanpage, từ đúng một tấm ảnh.</summary>
+public record PostContent(string Title, string Content);
+
 /// <summary>
 /// Looks at the pictures and writes what the voice will say.
 ///
@@ -13,6 +16,20 @@ public record VideoScript(string Title, string Script);
 public interface IScriptWriter
 {
     Task<VideoScript> WriteAsync(IReadOnlyList<string> imagePaths, CancellationToken ct = default);
+
+    /// <summary>
+    /// Viết nội dung cho NHIỀU bài đăng trong MỘT lượt gọi — mỗi ảnh một bài.
+    /// </summary>
+    /// <remarks>
+    /// Gộp cả mẻ vào một lượt là có chủ đích, không phải để chạy nhanh. Hạn mức Gemini của
+    /// tài khoản này bị chặn ở SỐ LƯỢT GỌI (20 mỗi ngày) chứ không phải dung lượng — đo
+    /// ngày 2026-08-30, token mỗi phút mới dùng chưa tới 1%. Gọi riêng từng bài sẽ ngốn 5
+    /// lượt cho việc mà một lượt làm xong, và 5 lượt đó lấy đi từ phần của tab tiếng Anh.
+    /// <para>Trả về đúng thứ tự của <paramref name="imagePaths"/>, và đúng bấy nhiêu phần
+    /// tử — bên gọi ghép lại theo vị trí.</para>
+    /// </remarks>
+    Task<IReadOnlyList<PostContent>> WritePostsAsync(
+        IReadOnlyList<string> imagePaths, CancellationToken ct = default);
 }
 
 /// <summary>Reads the script aloud and hands back audio.</summary>

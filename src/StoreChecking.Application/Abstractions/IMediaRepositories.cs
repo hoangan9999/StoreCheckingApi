@@ -101,6 +101,25 @@ public interface IMediaStorage
     IReadOnlyList<string> ListVideoFiles();
 }
 
+/// <summary>Bài viết tự sinh cho Fanpage.</summary>
+public interface IGeneratedPostRepository
+{
+    Task<(int Total, IReadOnlyList<GeneratedPost> Items)> ListAsync(
+        DateOnly? day, int skip, int take, CancellationToken ct = default);
+
+    Task<int> CountForDayAsync(DateOnly day, CancellationToken ct = default);
+    Task<int> CountPostedForDayAsync(DateOnly day, CancellationToken ct = default);
+
+    /// <summary>Bài tiếp theo tới lượt đăng, hoặc null khi cả mẻ đã lên hết.</summary>
+    Task<GeneratedPost?> NextUnpostedAsync(DateOnly day, CancellationToken ct = default);
+
+    Task<GeneratedPost?> FindAsync(Guid id, CancellationToken ct = default);
+    Task<IReadOnlyList<GeneratedPost>> ListOlderThanAsync(DateOnly cutoff, CancellationToken ct = default);
+
+    void Add(GeneratedPost row);
+    void RemoveRange(IEnumerable<GeneratedPost> rows);
+}
+
 /// <summary>Switches a person can flip from the app.</summary>
 public interface IAppSettingRepository
 {

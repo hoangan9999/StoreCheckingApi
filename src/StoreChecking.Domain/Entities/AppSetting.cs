@@ -24,6 +24,12 @@ public class AppSetting : IOwnedByUser
 /// <summary>Names of the settings in use, so no caller has to spell one out.</summary>
 public static class SettingKeys
 {
-    /// <summary>Đăng video lên Fanpage ngay khi dựng xong.</summary>
+    /// <summary>Đăng lên Fanpage ngay khi dựng/viết xong. Áp dụng cho cả video lẫn bài viết.</summary>
     public const string VideoAutoPost = "video.autoPost";
+
+    /// <summary>Có tự dựng video mỗi ngày không.</summary>
+    public const string MakeVideos = "video.enabled";
+
+    /// <summary>Có tự viết bài đăng mỗi ngày không.</summary>
+    public const string MakePosts = "post.enabled";
 }

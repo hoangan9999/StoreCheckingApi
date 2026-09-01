@@ -112,6 +112,50 @@ public sealed class FacebookPublisher(
         return new FanpagePost(id);
     }
 
+    public async Task<FanpagePost> PostPhotoAsync(
+        string filePath, string caption, CancellationToken ct = default)
+    {
+        if (!Configured)
+            throw new InvalidOperationException(
+                "Chưa khai FB_PAGE_ID / FB_PAGE_ACCESS_TOKEN, không đăng lên Fanpage được.");
+
+        if (!File.Exists(filePath))
+            throw new InvalidOperationException("Không tìm thấy file ảnh để đăng.");
+
+        using var client = http.CreateClient();
+        client.Timeout = TimeSpan.FromMinutes(3);
+
+        using var form = new MultipartFormDataContent();
+        await using var file = File.OpenRead(filePath);
+
+        var photo = new StreamContent(file);
+        photo.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        form.Add(photo, "source", Path.GetFileName(filePath));
+
+        form.Add(new StringContent(caption), "message");
+        form.Add(new StringContent("true"), "published");
+        form.Add(new StringContent(options.AccessToken!), "access_token");
+
+        // graph.facebook.com chứ không phải graph-video: ảnh đi đường thường.
+        var url = $"https://graph.facebook.com/{options.ApiVersion}/" +
+                  $"{Uri.EscapeDataString(options.PageId!)}/photos";
+
+        using var res = await client.PostAsync(url, form, ct);
+        var body = await res.Content.ReadAsStringAsync(ct);
+
+        var id = ReadId(body, out var error);
+
+        if (!res.IsSuccessStatusCode || error is not null || id is null)
+        {
+            var why = error ?? (body.Length <= 300 ? body : body[..300]);
+            log.LogWarning("Đăng ảnh lên Fanpage hỏng ({Status}): {Why}", (int)res.StatusCode, why);
+            throw new InvalidOperationException($"Facebook từ chối: {why}");
+        }
+
+        log.LogInformation("Đã đăng bài ảnh lên Fanpage, id {PostId}", id);
+        return new FanpagePost(id);
+    }
+
     /// <summary>Pulls the new post's id out of the reply, or the reason it was refused.</summary>
     private static string? ReadId(string body, out string? error)
     {

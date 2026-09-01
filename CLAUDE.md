@@ -111,6 +111,23 @@ Khai `FB_PAGE_ID` và `FB_PAGE_ACCESS_TOKEN` trong `.env` (lấy đúng cặp đ
 Vercel). Bỏ trống thì bỏ qua phần đăng, không báo lỗi gì. `FB_AUTOPOST=false` để chỉ đăng
 khi bấm nút.
 
+### Bài đăng Fanpage tự sinh — 2026-09-01
+
+Song song với video, cùng năm khung giờ (7h · 11h · 14h · 17h · 20h). Mỗi bài **một ảnh**
+lấy từ kho, AI nhìn ảnh nhận ra xe gì rồi viết nội dung. Caption ghép thêm link đặt hàng
+và dòng mời inbox, **không có giá** — giống video.
+
+⚡ **Cả mẻ 5 bài viết trong MỘT lượt gọi Gemini**, rồi mỗi khung giờ đăng một bài. Đây là
+điểm thiết kế quan trọng nhất: hạn mức bị chặn ở **số lượt gọi** (20/ngày), không phải
+dung lượng. Gọi riêng từng bài sẽ tốn 5 lượt cho việc một lượt làm xong, và 5 lượt đó lấy
+đi từ phần của tab tiếng Anh.
+
+Phân bổ sau khi có bài viết: 5 video + **1 bài (cả mẻ)** + 1 cron 19:00 = 7, còn **13 cho
+tiếng Anh** (trước là 14).
+
+Ba công tắc độc lập trong `app_settings`: `video.enabled`, `post.enabled`,
+`video.autoPost` (công tắc đăng dùng chung cho cả video lẫn bài).
+
 **Tự đăng mặc định BẬT**, tắt bằng checkbox trong app (Tiện ích → Video tự động).
 
 Công tắc nằm ở bảng `app_settings` (khoá `video.autoPost`), KHÔNG phải biến môi trường:

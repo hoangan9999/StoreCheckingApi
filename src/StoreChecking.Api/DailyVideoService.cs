@@ -100,6 +100,9 @@ public sealed class DailyVideoService(
         var due = slots.Count(h => vnNow.Hour >= h);
         if (due == 0) return;
 
+        // Bài viết trước, video sau. Bài rẻ hơn nhiều — một lượt Gemini cho cả mẻ, không có
+        // giọng đọc, không ffmpeg — nên nếu máy sắp tắt thì ít ra bài đã kịp lên.
+        await RunPostsAsync(due, ct);
         await GenerateAsync(null, $"theo lịch — đã qua {due} khung giờ", ct, due);
     }
 
@@ -123,6 +126,61 @@ public sealed class DailyVideoService(
         if (rows > 0 || orphans > 0)
             log.LogInformation("Đã dọn {Rows} video quá {Days} ngày và {Orphans} file mồ côi.",
                 rows, keepVideoDays, orphans);
+
+        var oldPosts = await sp.GetRequiredService<MediaService>().CleanupOldPostsAsync(keepVideoDays, ct);
+        if (oldPosts > 0) log.LogInformation("Đã dọn {N} bài đăng quá {Days} ngày.", oldPosts, keepVideoDays);
+    }
+
+    /// <summary>
+    /// Mẻ bài đăng của hôm nay: viết một lần, rồi rải ra từng khung giờ.
+    /// </summary>
+    /// <remarks>
+    /// Khác video ở nhịp làm việc. Cả năm bài được viết trong MỘT lượt gọi Gemini ngay ở
+    /// khung giờ đầu tiên, rồi mỗi khung giờ đăng một bài. Gọi riêng từng bài đúng giờ của
+    /// nó sẽ tốn 5 lượt thay vì 1, mà hạn mức của tài khoản này bị chặn đúng ở số lượt gọi.
+    /// <para>Vẫn theo lối "đếm khung giờ đã qua" như video: máy tắt cả buổi sáng thì lúc bật
+    /// lên nó đăng bù cho đủ số khung đã trôi qua.</para>
+    /// </remarks>
+    private async Task RunPostsAsync(int due, CancellationToken ct)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var sp = scope.ServiceProvider;
+
+        var owner = await sp.GetRequiredService<IMediaImageRepository>().FindOwnerAsync(ct);
+        if (owner is null) return;                    // kho ảnh còn rỗng
+
+        sp.GetRequiredService<ScopeUser>().RunAs(owner.Value);
+        var media = sp.GetRequiredService<MediaService>();
+
+        if (!await media.MakePostsEnabledAsync(ct)) return;
+
+        // Viết mẻ nếu hôm nay chưa có. Tự bỏ qua khi đã có, nên gọi lại bao nhiêu lần cũng
+        // không sinh thêm bài.
+        try
+        {
+            var written = await media.WriteTodaysPostsAsync(ct);
+            if (written > 0) log.LogInformation("Đã viết {N} bài đăng cho hôm nay (một lượt gọi).", written);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Viết mẻ bài hỏng, sẽ thử lại lượt sau.");
+            return;
+        }
+
+        if (!await media.AutoPostEnabledAsync(ct)) return;
+
+        var posted = await media.PostsMadeTodayAsync(ct);
+        var todo = Math.Min(due, MediaService.PostsPerDay) - posted;
+
+        for (var i = 0; i < todo && !ct.IsCancellationRequested; i++)
+        {
+            // Hết bài để đăng thì dừng — mẻ có thể ít hơn 5 nếu kho ảnh chưa đủ.
+            if (!await media.PostNextAsync(ct)) break;
+
+            log.LogInformation("Đã đăng bài {I}/{N} lên Fanpage.", i + 1, todo);
+            try { await Task.Delay(TimeSpan.FromSeconds(20), ct); }
+            catch (OperationCanceledException) { return; }
+        }
     }
 
     /// <summary>
@@ -139,6 +197,10 @@ public sealed class DailyVideoService(
         sp.GetRequiredService<ScopeUser>().RunAs(owner.Value);
 
         var media = sp.GetRequiredService<MediaService>();
+
+        // Công tắc "tạo video" tắt thì bỏ qua — trừ khi có người bấm nút, vì bấm nút là ý
+        // muốn rõ ràng, mạnh hơn một cài đặt mặc định.
+        if (count is null && !await media.MakeVideosEnabledAsync(ct)) return;
 
         // Theo lịch: chỉ dựng cho ĐỦ số khung giờ đã qua, không dựng trước phần của các
         // khung giờ còn ở phía trước — mục đích của khung giờ là rải đều trong ngày.

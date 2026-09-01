@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoreChecking.Application.Media;
+using StoreChecking.Domain.Entities;
 
 namespace StoreChecking.Api.Controllers;
 
@@ -133,12 +134,70 @@ public sealed class MediaController(MediaService media, VideoJobQueue queue) : C
     public async Task<IActionResult> GetSettings(CancellationToken ct) =>
         Ok(await media.GetSettingsAsync(ct));
 
-    /// <summary>Bật/tắt tự đăng lên Fanpage.</summary>
-    [HttpPut("settings/auto-post")]
-    public async Task<IActionResult> SetAutoPost([FromBody] AutoPostRequest body, CancellationToken ct) =>
-        Ok(await media.SetAutoPostAsync(body.AutoPost, ct));
+    /// <summary>Bật/tắt một công tắc: tự dựng video, tự viết bài, hay tự đăng.</summary>
+    [HttpPut("settings/{key}")]
+    public async Task<IActionResult> SetSwitch(string key, [FromBody] SwitchRequest body, CancellationToken ct)
+    {
+        // Tên công tắc trong URL dùng gạch ngang cho hợp lệ với đường dẫn; bên trong vẫn là
+        // khoá có dấu chấm như đã lưu trong database.
+        var real = key switch
+        {
+            "auto-post" => SettingKeys.VideoAutoPost,
+            "make-videos" => SettingKeys.MakeVideos,
+            "make-posts" => SettingKeys.MakePosts,
+            _ => null,
+        };
+        if (real is null) return NotFound(new { error = $"Không có cài đặt \"{key}\"." });
 
-    public record AutoPostRequest(bool AutoPost);
+        return Ok(await media.SetSwitchAsync(real, body.On, ct));
+    }
+
+    public record SwitchRequest(bool On);
+
+    // ---------- Bài đăng Fanpage ----------
+
+    [HttpGet("posts")]
+    public async Task<IActionResult> ListPosts(DateOnly? day, int? limit, int? offset, CancellationToken ct) =>
+        Ok(await media.ListPostsAsync(day, limit, offset, ct));
+
+    /// <summary>Viết mẻ bài của hôm nay ngay, không chờ tới khung giờ.</summary>
+    /// <remarks>
+    /// Chờ tại chỗ chứ không đẩy ra nền: cả mẻ chỉ là MỘT lượt gọi Gemini, xong trong vài
+    /// chục giây — khác hẳn video, mỗi cái một phút nên năm cái phải chạy nền.
+    /// </remarks>
+    [HttpPost("posts/generate")]
+    public async Task<IActionResult> GeneratePosts(CancellationToken ct)
+    {
+        try
+        {
+            var n = await media.WriteTodaysPostsAsync(ct);
+            return n == 0
+                ? Ok(new { written = 0, note = "Hôm nay đã có mẻ bài rồi." })
+                : Ok(new { written = n });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("posts/{id:guid}/post")]
+    public async Task<IActionResult> PostArticle(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var row = await media.PostArticleToFanpageAsync(id, ct);
+            if (row is null) return NotFound();
+
+            return row.PostedAt is null
+                ? BadRequest(new { error = row.PostError ?? "Không đăng được lên Fanpage." })
+                : Ok(row);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
 
     /// <summary>Đăng tay một video lên Fanpage.</summary>
     /// <remarks>
