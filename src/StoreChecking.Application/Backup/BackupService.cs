@@ -16,7 +16,13 @@ public sealed class BackupService(IBackupRepository backup)
     /// work_month_notes, english_words and speaking_saved were never in a backup and adding
     /// them here would quietly change what a backup file contains.</para>
     /// </summary>
-    public static readonly string[] Tables =
+    /// <summary>
+    /// Bảng đã có từ đầu. KHÔNG phải danh sách để sao lưu — danh sách đó hỏi database.
+    /// <para>Giữ lại làm mức sàn: nếu một trong những bảng này biến mất khỏi kết quả dò, thì
+    /// hoặc truy vấn dò hỏng, hoặc bảng bị xoá thật. Cả hai đều phải nổ ra ngay, chứ không
+    /// phải âm thầm cho ra một bản sao lưu thiếu — thứ chỉ lộ vào đúng ngày cần dùng.</para>
+    /// </summary>
+    private static readonly string[] MustInclude =
     [
         "batches",
         "products",
@@ -30,10 +36,20 @@ public sealed class BackupService(IBackupRepository backup)
 
     public async Task<BackupDto> DumpAsync(CancellationToken ct = default)
     {
-        var tables = new Dictionary<string, JsonElement>(Tables.Length);
-        var counts = new Dictionary<string, int>(Tables.Length);
+        var names = await backup.TablesAsync(ct);
 
-        foreach (var name in Tables)
+        var missing = MustInclude.Except(names).ToList();
+        if (missing.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Sao lưu thiếu bảng đáng lẽ phải có: " + string.Join(", ", missing) +
+                ". Dừng lại thay vì tạo ra một bản sao lưu khuyết.");
+        }
+
+        var tables = new Dictionary<string, JsonElement>(names.Count);
+        var counts = new Dictionary<string, int>(names.Count);
+
+        foreach (var name in names)
         {
             var rows = await backup.DumpAsync(name, ct);
             tables[name] = rows;

@@ -23,10 +23,34 @@ namespace StoreChecking.Infrastructure.Persistence.Repositories;
 /// </summary>
 public sealed class BackupRepository(AppDbContext db, ICurrentUser user) : IBackupRepository
 {
+    /// <summary>
+    /// Tables owning per-user rows: every public table with a `user_id` column.
+    /// <para>That column IS the definition — it is what makes a row belong to someone, and
+    /// what the dump below filters on. `schema_history` has none and is correctly left out:
+    /// it records which migrations ran, not anybody's data.</para>
+    /// </summary>
+    public async Task<IReadOnlyList<string>> TablesAsync(CancellationToken ct = default) =>
+        await db.Database.SqlQueryRaw<string>(
+            @"select c.table_name as ""Value""
+              from information_schema.columns c
+              join information_schema.tables t
+                on t.table_schema = c.table_schema and t.table_name = c.table_name
+              where c.table_schema = 'public'
+                and c.column_name = 'user_id'
+                and t.table_type = 'BASE TABLE'
+              order by c.table_name")
+            .ToListAsync(ct);
+
     public async Task<JsonElement> DumpAsync(string table, CancellationToken ct = default)
     {
-        if (!BackupService.Tables.Contains(table))
-            throw new ArgumentException($"'{table}' không nằm trong danh sách bảng được sao lưu.", nameof(table));
+        // The name is interpolated into SQL below, so it is checked against the catalogue
+        // here rather than trusted. The shape check comes first: it is cheap, and it means
+        // nothing strange ever reaches the catalogue query either.
+        if (!System.Text.RegularExpressions.Regex.IsMatch(table, "^[a-z][a-z0-9_]*$"))
+            throw new ArgumentException($"Tên bảng '{table}' không hợp lệ.", nameof(table));
+
+        if (!(await TablesAsync(ct)).Contains(table))
+            throw new ArgumentException($"'{table}' không phải bảng có dữ liệu theo người dùng.", nameof(table));
 
         // json_agg over the whole table gives one string back rather than one row per record,
         // and coalesce turns an empty table into [] instead of null. EF requires the scalar

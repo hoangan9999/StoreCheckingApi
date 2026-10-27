@@ -43,4 +43,25 @@ public static class TestDatabase
 
     public static bool IsAvailable => Probe.Value is null;
     public static string SkipReason => Probe.Value ?? "";
+
+    /// <summary>
+    /// Chạy một câu truy vấn trả về một cột chữ, dùng cho việc hỏi thẳng danh mục database.
+    /// </summary>
+    /// <remarks>
+    /// Đi thẳng Npgsql chứ không qua API hay EF là có chủ đích: test nào muốn đối chiếu
+    /// "code nghĩ có gì" với "database thật có gì" thì phải hỏi database bằng một đường
+    /// khác hẳn đường đang kiểm tra. Hỏi qua chính lớp đó thì hai bên cùng sai vẫn khớp.
+    /// </remarks>
+    public static async Task<List<string>> QueryStringsAsync(string sql)
+    {
+        await using var conn = new NpgsqlConnection(ConnectionString);
+        await conn.OpenAsync();
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        var rows = new List<string>();
+        while (await reader.ReadAsync()) rows.Add(reader.GetString(0));
+        return rows;
+    }
 }
