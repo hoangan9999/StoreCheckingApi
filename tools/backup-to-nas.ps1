@@ -124,6 +124,79 @@ try {
 
     Write-Line "Đã gửi lên NAS: $RemoteDir/$name ($zkb KB)."
 
+    # ---------- Media files ----------
+    # pg_dump backs up the DATABASE, not the FILES. media_images stores only file NAMES; the
+    # pictures themselves live in a Docker volume on this machine. Restoring the database
+    # without them leaves a list pointing at images that no longer exist.
+    #
+    # Only images and notes are taken. Those were uploaded by hand and cannot be recreated.
+    # The videos folder is left out DELIBERATELY: they are generated daily and deleted after
+    # five days, so copying them spends bandwidth and NAS space on something the system
+    # rebuilds by itself.
+    $mediaOk = $true
+
+    if (-not (& docker compose ps --services --filter status=running | Where-Object { $_ -eq 'api' })) {
+        Write-Line 'Container api không chạy, bỏ qua phần media lần này.'
+        $mediaOk = $false
+    }
+    else {
+        # Fingerprint of the folders: names, sizes and modification times. Unchanged means
+        # there is nothing to send, which matters because 39 MB a night would otherwise grow
+        # into tens of GB a year on the NAS for data that never changed.
+        $listing = & docker exec storechecking-api sh -c 'ls -laR /data/media/images /data/media/notes 2>/dev/null'
+        $sha = [BitConverter]::ToString(
+            [Security.Cryptography.SHA256]::Create().ComputeHash(
+                [Text.Encoding]::UTF8.GetBytes(($listing -join "`n")))).Replace('-', '')
+
+        $markPath = Join-Path $OutDir 'media.sha256'
+        $prev = if (Test-Path $markPath) { (Get-Content $markPath -Raw).Trim() } else { '' }
+
+        if ($sha -eq $prev) {
+            Write-Line 'Media không đổi từ lần trước, không gửi lại.'
+        }
+        else {
+            $stage = Join-Path $OutDir "media-$stamp"
+            $mzip  = Join-Path $OutDir "storechecking-media-$stamp.zip"
+            Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item $mzip -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $stage | Out-Null
+
+            # docker cp rather than tar inside the container: it needs no tooling in the
+            # image, so it keeps working whatever that image turns into.
+            & docker cp 'storechecking-api:/data/media/images' (Join-Path $stage 'images') | Out-Null
+            $cpImages = $LASTEXITCODE
+            & docker cp 'storechecking-api:/data/media/notes' (Join-Path $stage 'notes') | Out-Null
+            $cpNotes = $LASTEXITCODE
+
+            if ($cpImages -ne 0 -or $cpNotes -ne 0) {
+                Write-Line "Lấy file media ra hỏng (images=$cpImages notes=$cpNotes). Không gửi lên NAS."
+                $mediaOk = $false
+            }
+            else {
+                Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $mzip -CompressionLevel Optimal
+                $mkb   = [math]::Round((Get-Item $mzip).Length / 1KB, 1)
+                $mname = Split-Path $mzip -Leaf
+                $murl  = "$($nasUrl.TrimEnd('/'))/upload?dir=media-backup"
+
+                $mout = & $curl -s -S --max-time 900 -X POST $murl `
+                    -H "Authorization: Bearer $nasTok" -H "X-Filename: $mname" --data-binary "@$mzip" 2>&1
+
+                if ($LASTEXITCODE -ne 0 -or "$mout" -notmatch '"ok"\s*:\s*true') {
+                    Write-Line "Gửi media lên NAS hỏng: $mout"
+                    $mediaOk = $false
+                }
+                else {
+                    Write-Line "Đã gửi media lên NAS: media-backup/$mname ($mkb KB)."
+                    # Written only AFTER a successful upload. Writing it earlier would make
+                    # a failed send look done, and every later run would skip it for good.
+                    Set-Content -Path $markPath -Value $sha -Encoding ascii
+                }
+            }
+
+            Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     # ---------- Prune local copies only ----------
     Get-ChildItem $OutDir -Filter 'storechecking-*.sql' |
         Sort-Object LastWriteTime -Descending | Select-Object -Skip $KeepLocal |
@@ -131,6 +204,14 @@ try {
     Get-ChildItem $OutDir -Filter 'storechecking-*.zip' |
         Sort-Object LastWriteTime -Descending | Select-Object -Skip $KeepLocal |
         ForEach-Object { Remove-Item $_.FullName -ErrorAction SilentlyContinue }
+
+    # The database reached the NAS safely, but reporting success while the media half
+    # failed would be a lie — and that kind of lie only surfaces on the day the backup is
+    # actually needed.
+    if (-not $mediaOk) {
+        Write-Line 'Database đã sao lưu xong, nhưng phần media thì KHÔNG. Xem dòng log ở trên.'
+        exit 1
+    }
 
     exit 0
 }

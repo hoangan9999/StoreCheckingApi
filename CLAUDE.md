@@ -143,16 +143,42 @@ Vercel báo *"13 Secret values cannot be pulled"*. Nên `.env` của repo này p
 RIÊNG, và lúc tạo phải lưu thêm một bản vào trình quản lý mật khẩu. Dùng **System User
 token** (Business Settings → Users → System Users) vì loại đó không hết hạn.
 
-### Việc còn nợ
+### Sao lưu — kiểm chứng 2026-10-27
+
+**Có HAI thứ cùng tên "backup", đừng lẫn:**
+
+| | Là gì | Đủ không |
+|---|---|---|
+| `tools/backup-to-nas.ps1` | `pg_dump` toàn bộ database, chạy 1h sáng, đẩy lên NAS | **Đủ** |
+| `GET /api/backup` | Kết xuất JSON theo người dùng, cho nút xuất dữ liệu trong app | Đủ, từ 2026-10-27 |
+
+Bản đêm dùng `pg_dump` nên bảng mới **tự vào**, không ai phải nhớ cập nhật danh sách.
+Kiểm chứng ngày 2026-10-27: tải bản `storechecking-2026-10-27.zip` từ NAS về, đếm dòng
+từng bảng và so với `count(*)` trên database đang chạy — **22/22 bảng, số dòng khớp**.
+
+⚠️ Khi kiểm tra kiểu này đừng dùng `n_live_tup` của `pg_stat_user_tables`: đó là con số
+ước lượng và có thể lệch rất xa (`expenses` báo 51 trong khi thật là 311). Dùng `count(*)`.
+
+**File media đi kèm từ 2026-10-27.** `pg_dump` sao lưu database chứ không sao lưu file,
+mà `media_images` chỉ giữ TÊN file — ảnh thật nằm trong volume Docker trên laptop. Script
+giờ đóng gói thêm `images` và `notes` rồi đẩy lên `media-backup/` trên NAS.
+
+Thư mục `videos` **cố ý bỏ qua**: video tự sinh mỗi ngày và tự xoá sau 5 ngày, sao lưu nó
+là tốn băng thông cho thứ hệ thống tự dựng lại được.
+
+Có cơ chế chống gửi trùng: lấy vân tay thư mục (tên + kích thước + thời điểm sửa), không
+đổi thì không gửi lại — nếu không, 39MB mỗi đêm sẽ thành hàng chục GB mỗi năm trên NAS.
+Vân tay chỉ được ghi SAU khi gửi thành công.
+
+**Chỗ lưu trên NAS:** `/volume1/PackingVideos/videos/db-backup/` và `.../media-backup/`.
+
+## Việc còn nợ
 
 - [ ] **Đổi 4 thứ đã lộ trong lịch sử chat** — nên làm sớm:
       token GHCR (đang có quyền `repo` cho MỌI repo riêng tư, chỉ cần `read:packages`),
       mật khẩu database Supabase, mật khẩu Postgres trên NAS (`DB_PASSWORD` trong `.env`),
       và `TS_AUTHKEY`.
 - [ ] **Xoá dữ liệu cũ trên Supabase** — vẫn còn nguyên, cố ý. Chỉ xoá khi đã yên tâm hẳn.
-- [ ] **Sao lưu không có 5 bảng**: `notes`, `work_days`, `work_month_notes`,
-      `english_words`, `speaking_saved` chưa từng nằm trong bản sao lưu, kể cả thời
-      Supabase. Thêm vào là đổi nội dung file — cần quyết định riêng.
 - [ ] **Code chết bên Angular**: `updateQueueItem`, `listPostTargets`, `setPosted` trong
       `supabase.service.ts` không còn ai gọi. Thuộc Marketing nên chưa gỡ.
 
