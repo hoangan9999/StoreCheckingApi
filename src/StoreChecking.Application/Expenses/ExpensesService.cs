@@ -34,7 +34,8 @@ public sealed class ExpensesService(
     private static ExpenseDto ToDto(Expense r) =>
         new(r.Id, r.CategoryId, r.SpentOn.ToString(DayFormat), r.Description, r.Amount, r.Note, r.CreatedAt);
 
-    private static MonthlyIncomeDto ToDto(MonthlyIncome r) => new(r.Id, r.Year, r.Month, r.Income, r.Note);
+    private static MonthlyIncomeDto ToDto(MonthlyIncome r) =>
+        new(r.Id, r.Year, r.Month, r.Income, r.Note, r.RoundedSavings);
 
     // ---------- Categories ----------
 
@@ -229,6 +230,9 @@ public sealed class ExpensesService(
 
         row.Income = body.Income;
         row.Note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim();
+
+        // Không chặn số âm: tháng tiêu lố thì số còn lại âm, và chốt một con số âm là hợp lệ.
+        row.RoundedSavings = body.RoundedSavings;
 
         await uow.SaveChangesAsync(ct);
         return ToDto(row);

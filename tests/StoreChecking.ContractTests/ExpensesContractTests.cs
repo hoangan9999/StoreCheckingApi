@@ -397,7 +397,11 @@ public sealed class ExpensesContractTests(ApiFactory api)
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
         var row = await Json.Read(first);
-        Json.HasExactly(row, "id", "year", "month", "income", "note");
+        Json.HasExactly(row, "id", "year", "month", "income", "note", "roundedSavings");
+
+        // Chưa nhập thì phải là null, KHÔNG phải 0. Giao diện lấy null làm dấu hiệu "chưa
+        // chốt, dùng số tính ra"; trả về 0 là mọi tháng chưa nhập bị cộng thành 0.
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("roundedSavings").ValueKind);
         Assert.Equal(20_000_000m, row.GetProperty("income").GetDecimal());
         Assert.Equal("lương", row.GetProperty("note").GetString());
 
@@ -512,5 +516,51 @@ public sealed class ExpensesContractTests(ApiFactory api)
             Assert.True((await anon.GetAsync(url)).StatusCode == HttpStatusCode.Unauthorized,
                 $"{url} phải trả 401 khi không có token.");
         }
+    }
+
+    // Ô làm tròn: người dùng tự chốt số còn lại của tháng, dùng thay cho số tính ra khi
+    // cộng cả năm. Null và 0 phải là hai thứ khác nhau.
+    [DbFact]
+    public async Task Lam_tron_luu_duoc_va_xoa_duoc()
+    {
+        var c = NewUser();
+
+        var set = await Json.Read(await c.PutJson("/api/expenses/income",
+            new { year = 2026, month = 10, income = 45_000_000m, note = (string?)null, roundedSavings = 23_000_000m }));
+        Assert.Equal(23_000_000m, set.GetProperty("roundedSavings").GetDecimal());
+
+        // Đọc lại từ database chứ không tin câu trả lời của lần ghi.
+        var listed = await Json.Read(await c.GetAsync("/api/expenses/income?year=2026"));
+        Assert.Equal(23_000_000m, listed[0].GetProperty("roundedSavings").GetDecimal());
+
+        // Gửi null = bỏ chốt, quay về số tính ra.
+        var cleared = await Json.Read(await c.PutJson("/api/expenses/income",
+            new { year = 2026, month = 10, income = 45_000_000m, note = (string?)null, roundedSavings = (decimal?)null }));
+        Assert.Equal(JsonValueKind.Null, cleared.GetProperty("roundedSavings").ValueKind);
+    }
+
+    // Số 0 là một lựa chọn hợp lệ, không được lẫn với "chưa nhập".
+    [DbFact]
+    public async Task Lam_tron_bang_khong_khac_voi_chua_nhap()
+    {
+        var c = NewUser();
+
+        var zero = await Json.Read(await c.PutJson("/api/expenses/income",
+            new { year = 2026, month = 3, income = 1_000_000m, note = (string?)null, roundedSavings = 0m }));
+
+        Assert.Equal(JsonValueKind.Number, zero.GetProperty("roundedSavings").ValueKind);
+        Assert.Equal(0m, zero.GetProperty("roundedSavings").GetDecimal());
+    }
+
+    // Tháng tiêu lố thì số còn lại âm, chốt một con số âm phải được chấp nhận.
+    [DbFact]
+    public async Task Lam_tron_nhan_so_am()
+    {
+        var c = NewUser();
+
+        var neg = await Json.Read(await c.PutJson("/api/expenses/income",
+            new { year = 2026, month = 4, income = 1_000_000m, note = (string?)null, roundedSavings = -2_000_000m }));
+
+        Assert.Equal(-2_000_000m, neg.GetProperty("roundedSavings").GetDecimal());
     }
 }

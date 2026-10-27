@@ -51,6 +51,7 @@ public sealed class MonthlyIncomeConfiguration : IEntityTypeConfiguration<Monthl
     public void Configure(EntityTypeBuilder<MonthlyIncome> e)
     {
         e.ToTable("monthly_income");
+        e.Property(x => x.RoundedSavings).HasColumnName("rounded_savings");
         e.HasKey(x => x.Id);
         e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.UserId).HasColumnName("user_id");

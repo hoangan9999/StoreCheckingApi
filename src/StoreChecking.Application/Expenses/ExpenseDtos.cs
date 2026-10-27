@@ -29,10 +29,15 @@ public record SaveExpenseRequest(
 // ---------- Monthly income ----------
 
 /// <summary>Income recorded for one month.</summary>
-public record MonthlyIncomeDto(Guid Id, int Year, int Month, decimal Income, string? Note);
+public record MonthlyIncomeDto(
+    Guid Id, int Year, int Month, decimal Income, string? Note, decimal? RoundedSavings);
 
 /// <summary>Set the income for one month. Creates the row if the month has none yet.</summary>
-public record SetIncomeRequest(int Year, int Month, decimal Income, string? Note);
+/// <param name="RoundedSavings">
+/// Số còn lại tự chốt. Để null nghĩa là xoá phần chốt, quay về số tính ra.
+/// </param>
+public record SetIncomeRequest(
+    int Year, int Month, decimal Income, string? Note, decimal? RoundedSavings = null);
 
 // ---------- Roll-ups ----------
 
