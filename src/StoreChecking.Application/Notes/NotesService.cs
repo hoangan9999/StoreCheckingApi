@@ -28,6 +28,8 @@ public sealed class NotesService(
 
     public async Task<NoteDto> AddAsync(SaveNoteRequest body, CancellationToken ct = default)
     {
+        var existing = await notes.ListAsync(ct);
+
         var row = new Note
         {
             UserId = user.Id,
@@ -35,10 +37,45 @@ public sealed class NotesService(
             // Content is NOT trimmed: notes exist to be copied verbatim, and a template's
             // own leading blank line or indentation is part of what the user saved.
             Content = body.Content ?? "",
+            // One above the current top, so a new note still appears first — the habit
+            // from before the list could be arranged by hand. Nothing else has to move.
+            Position = existing.Count == 0 ? 0 : existing.Min(x => x.Position) - 1,
         };
         notes.Add(row);
         await uow.SaveChangesAsync(ct);
         return ToDto(row);
+    }
+
+    /// <summary>Lay the notes out in the order given, and return the list as it now stands.</summary>
+    /// <remarks>
+    /// The whole list comes back rather than a bare 204, so a note added on another device
+    /// while this one was being dragged shows up straight away instead of only after the
+    /// next reload. Those unnamed notes keep their relative order and sit after the ones
+    /// the client did name — it cannot have meant anything about a note it never saw.
+    /// </remarks>
+    public async Task<IReadOnlyList<NoteDto>> ReorderAsync(
+        IReadOnlyList<Guid>? ids, CancellationToken ct = default)
+    {
+        var rows = await notes.ListAsync(ct);
+        if (rows.Count == 0) return [];
+
+        var byId = rows.ToDictionary(x => x.Id);
+        var ordered = new List<Note>();
+
+        foreach (var id in ids ?? [])
+        {
+            // A repeated id, or one belonging to somebody else's note (the query filter
+            // never returned it), is simply not an instruction about this list.
+            if (byId.Remove(id, out var row)) ordered.Add(row);
+        }
+
+        ordered.AddRange(rows.Where(x => byId.ContainsKey(x.Id)));
+        for (var i = 0; i < ordered.Count; i++) ordered[i].Position = i;
+
+        // UpdatedAt is deliberately left alone: moving a note is not editing it, and the
+        // listing still falls back to that timestamp wherever positions tie.
+        await uow.SaveChangesAsync(ct);
+        return ordered.Select(ToDto).ToList();
     }
 
     /// <returns><c>null</c> when no such note belongs to the current user.</returns>

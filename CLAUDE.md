@@ -50,6 +50,36 @@ nguyên hostname `storechecking`, chỉ chạy ở máy khác. App trên Vercel 
 
 ---
 
+
+## Ghi chú có thứ tự kéo thả — 2026-10-29
+
+`db/017-note-position.sql` thêm cột `position` vào `notes`, và `PUT /api/notes/order`
+nhận **danh sách id** (không nhận số thứ tự — hai bên khỏi phải thống nhất con số nghĩa
+là gì), trả về cả danh sách mới.
+
+⚠️ **ĐỔI Ý có chủ đích: sửa ghi chú không còn kéo nó lên đầu.** Danh sách trước xếp theo
+`updated_at desc`; với danh sách người dùng tự sắp thì đó là thứ phá hỏng mọi công sắp
+xếp. Test `Sua_xong_thi_nhay_len_dau_danh_sach` đã được thay bằng
+`Sua_ghi_chu_thi_no_NAM_YEN_tai_cho` — **đổi test có chủ đích, không phải test hỏng.**
+
+- `ReorderAsync` không đụng `UpdatedAt`: chuyển chỗ một ghi chú không phải là sửa nó.
+- Id không được nhắc tới (máy khác vừa thêm) **xuống cuối chứ không mất**, giữ nguyên thứ
+  tự tương đối với nhau.
+- Ghi chú mới nhận `min(position) - 1` nên vẫn vào đầu danh sách.
+- Lệnh `update` nạp thứ tự ban đầu trong file SQL có chốt
+  `not exists (... position <> 0)`: chạy lại file lần nữa sẽ không đạp lên sắp xếp của
+  người dùng. SchemaMigrator vốn chỉ chạy mỗi file một lần, nhưng một lệnh update không
+  tự bảo vệ mình thì sớm muộn cũng có người chạy tay.
+
+**Chạy test hợp đồng trên máy này được rồi** — ghi chú cũ trong `TestDatabase.cs` nói máy
+dev không có Docker đã cũ (cụm đã chuyển về laptop 2026-08-30). Dựng một Postgres riêng
+để khỏi đụng dữ liệu thật:
+
+```
+docker start sc-test-pg
+TEST_POSTGRES="Host=localhost;Port=55990;Database=storechecking_test;Username=postgres;Password=postgres" dotnet test
+```
+
 ## 📌 ĐANG Ở ĐÂU — cập nhật 2026-08-29
 
 **Cuộc migrate đã XONG.** Backend, dữ liệu, Angular đều đã cắt sang; code Supabase cũ đã

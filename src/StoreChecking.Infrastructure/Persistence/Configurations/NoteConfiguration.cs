@@ -15,8 +15,10 @@ public sealed class NoteConfiguration : IEntityTypeConfiguration<Note>
         e.Property(x => x.Title).HasColumnName("title");
         e.Property(x => x.Images).HasColumnName("images").HasColumnType("text[]");
         e.Property(x => x.Content).HasColumnName("content").HasDefaultValue("");
+        e.Property(x => x.Position).HasColumnName("position").HasDefaultValue(0);
         e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
         e.HasIndex(x => new { x.UserId, x.UpdatedAt });
+        e.HasIndex(x => new { x.UserId, x.Position });
     }
 }

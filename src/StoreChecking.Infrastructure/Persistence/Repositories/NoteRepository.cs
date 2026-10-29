@@ -6,12 +6,14 @@ namespace StoreChecking.Infrastructure.Persistence.Repositories;
 
 public sealed class NoteRepository(AppDbContext db) : INoteRepository
 {
-    // Most recently touched first, matching what the Marketing tab showed on Supabase.
-    // Id breaks ties: two notes saved in the same transaction share updated_at exactly,
-    // and an undefined order between them makes the list jump around between reloads.
+    // The user's own arrangement first; most recently touched decides between notes that
+    // have never been dragged apart. Id breaks the last tie: two notes saved in the same
+    // transaction share updated_at exactly, and an undefined order between them makes the
+    // list jump around between reloads.
     public async Task<IReadOnlyList<Note>> ListAsync(CancellationToken ct = default) =>
         await db.Notes
-            .OrderByDescending(x => x.UpdatedAt).ThenByDescending(x => x.Id)
+            .OrderBy(x => x.Position)
+            .ThenByDescending(x => x.UpdatedAt).ThenByDescending(x => x.Id)
             .ToListAsync(ct);
 
     public Task<Note?> FindAsync(Guid id, CancellationToken ct = default) =>

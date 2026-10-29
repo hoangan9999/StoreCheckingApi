@@ -28,6 +28,14 @@ public class Note : IOwnedByUser
     /// </summary>
     public string[] Images { get; set; } = [];
 
+    /// <summary>
+    /// Where the note sits in the user's own arrangement. Smaller is higher up.
+    /// <para>Deliberately not on <c>NoteDto</c>: the client sends an ordered list of ids
+    /// and reads the list back in order, so the number itself is nobody else's business.
+    /// </para>
+    /// </summary>
+    public int Position { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

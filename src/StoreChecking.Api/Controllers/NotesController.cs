@@ -28,6 +28,15 @@ public sealed class NotesController(NotesService notes) : ControllerBase
         return Created($"/api/notes/{created.Id}", created);
     }
 
+    /// <summary>Sắp xếp lại ghi chú theo thứ tự kéo thả, trả về danh sách mới.</summary>
+    /// <remarks>
+    /// Sits with the other collection-level routes on purpose. "order" is not a Guid, so
+    /// it never collides with the <c>{id:guid}</c> routes below.
+    /// </remarks>
+    [HttpPut("order")]
+    public async Task<IActionResult> Reorder([FromBody] ReorderNotesRequest body, CancellationToken ct) =>
+        Ok(await notes.ReorderAsync(body?.Ids, ct));
+
     /// <summary>Sửa tiêu đề và nội dung một ghi chú.</summary>
     /// <summary>Đính một ảnh vào ghi chú.</summary>
     [HttpPost("{id:guid}/images")]

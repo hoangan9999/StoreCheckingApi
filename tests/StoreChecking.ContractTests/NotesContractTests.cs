@@ -99,21 +99,24 @@ public sealed class NotesContractTests(ApiFactory api)
         Assert.Equal(1, listed.GetArrayLength());     // edited, not duplicated
     }
 
+    // Thay cho test cũ "sửa xong thì nhảy lên đầu danh sách" -- ĐỔI Ý có chủ đích, kèm
+    // cột `position` (db/017). Danh sách sắp bằng tay mà sửa một ghi chú là nó tự nhảy
+    // lên đầu thì sắp xếp coi như vô nghĩa. Thứ tự giờ là của người dùng, không phải của
+    // lần sửa gần nhất.
     [DbFact]
-    public async Task Sua_xong_thi_nhay_len_dau_danh_sach()
+    public async Task Sua_ghi_chu_thi_no_NAM_YEN_tai_cho()
     {
         var c = NewUser();
         var first = (await Json.Read(await c.PostJson("/api/notes", new { title = "A", content = "a" }))).GetProperty("id").GetGuid();
         var second = (await Json.Read(await c.PostJson("/api/notes", new { title = "B", content = "b" }))).GetProperty("id").GetGuid();
 
-        // Both were created in the same second, so this also proves the Id tie-break keeps
-        // the order stable rather than leaving it up to the database.
+        // B tạo sau nên đang ở trên. Sửa A không được đổi điều đó.
         await c.PutJson($"/api/notes/{first}", new { title = "A", content = "a sua roi" });
 
         var listed = await Json.Read(await c.GetAsync("/api/notes"));
         Assert.Equal(2, listed.GetArrayLength());
-        Assert.Equal(first, listed[0].GetProperty("id").GetGuid());
-        Assert.Equal(second, listed[1].GetProperty("id").GetGuid());
+        Assert.Equal(second, listed[0].GetProperty("id").GetGuid());
+        Assert.Equal(first, listed[1].GetProperty("id").GetGuid());
     }
 
     [DbFact]
@@ -210,5 +213,79 @@ public sealed class NotesContractTests(ApiFactory api)
 
         Assert.Equal(HttpStatusCode.NoContent, (await c.DeleteAsync($"/api/notes/{id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await c.GetAsync($"/api/notes/images/{name}")).StatusCode);
+    }
+
+    // ---- Thứ tự do người dùng kéo thả ----
+
+    private static async Task<Guid> Add(HttpClient c, string content) =>
+        (await Json.Read(await c.PostJson("/api/notes", new { title = (string?)null, content })))
+            .GetProperty("id").GetGuid();
+
+    private static async Task<Guid[]> Ids(HttpClient c)
+    {
+        var listed = await Json.Read(await c.GetAsync("/api/notes"));
+        return [.. listed.EnumerateArray().Select(x => x.GetProperty("id").GetGuid())];
+    }
+
+    [DbFact]
+    public async Task Keo_tha_doi_thu_tu_va_giu_nguyen_sau_khi_doc_lai()
+    {
+        var c = NewUser();
+        var a = await Add(c, "A");
+        var b = await Add(c, "B");
+        var d = await Add(c, "C");
+
+        // Ghi chú mới vào đầu danh sách, đúng như trước khi có sắp xếp tay.
+        Assert.Equal([d, b, a], await Ids(c));
+
+        var after = await Json.Read(await c.PutJson("/api/notes/order", new { ids = new[] { a, d, b } }));
+        Assert.Equal([a, d, b], after.EnumerateArray().Select(x => x.GetProperty("id").GetGuid()));
+
+        // Đọc lại từ server: thứ tự phải nằm trong database chứ không phải chỉ trên màn hình.
+        Assert.Equal([a, d, b], await Ids(c));
+    }
+
+    // Sửa ghi chú KHÔNG được kéo nó lên đầu. Trước khi có cột thứ tự thì danh sách xếp
+    // theo updated_at, nên sửa là nhảy lên trên -- đúng cái làm hỏng một danh sách đã
+    // được sắp bằng tay.
+    [DbFact]
+    public async Task Sua_ghi_chu_khong_lam_no_nhay_len_dau()
+    {
+        var c = NewUser();
+        var a = await Add(c, "A");
+        var b = await Add(c, "B");
+
+        await c.PutJson("/api/notes/order", new { ids = new[] { a, b } });
+        await c.PutJson($"/api/notes/{b}", new { title = (string?)null, content = "B đã sửa" });
+
+        Assert.Equal([a, b], await Ids(c));
+    }
+
+    // Máy khác thêm ghi chú trong lúc đang kéo: id lạ không bị mất, chỉ xuống cuối.
+    [DbFact]
+    public async Task Ghi_chu_khong_duoc_nhac_den_thi_xuong_cuoi_chu_khong_mat()
+    {
+        var c = NewUser();
+        var a = await Add(c, "A");
+        var b = await Add(c, "B");
+
+        var after = await Json.Read(await c.PutJson("/api/notes/order", new { ids = new[] { b } }));
+
+        Assert.Equal([b, a], after.EnumerateArray().Select(x => x.GetProperty("id").GetGuid()));
+    }
+
+    // Danh sách rỗng, id trùng, id của người khác -- không được làm đổ.
+    [DbFact]
+    public async Task Danh_sach_id_hong_thi_bo_qua_chu_khong_loi()
+    {
+        var c = NewUser();
+        var a = await Add(c, "A");
+        var cuaNguoiKhac = await Add(NewUser(), "của người khác");
+
+        var res = await c.PutJson("/api/notes/order",
+            new { ids = new[] { a, a, cuaNguoiKhac, Guid.NewGuid() } });
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal([a], await Ids(c));
     }
 }
