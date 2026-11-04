@@ -842,6 +842,58 @@ $5, khoảng 130.000đ/tháng**. Rẻ hơn nhiều so với thời gian bỏ ra 
 
 ---
 
+
+## Trừ tồn kho từ nhãn vận đơn — 2026-11-04
+
+`db/018-product-kinds.sql`, `db/019-label-deduction.sql`, `LabelDeductionService`.
+
+Nhãn vận đơn **không mang mã nào trỏ về kho**, chỉ mang chữ do người bán tự gõ bên
+TikTok/SPX. Nên khoá chung không đi tìm được, phải tạo ra.
+
+**`product_kinds` — danh tính của một mặt hàng.** Trước đây "Basic" không tồn tại như một
+thứ gì: chỉ có mấy dòng `products`, mỗi lô một dòng, tình cờ trùng tên (thật: `Basic` ở 3
+lô, `Premium` 3 lô, và có cả `'Basic'` lẫn `'Basic '`). `id` là danh tính, `name` chỉ là
+chữ hiện ra. `products.kind_id` và `label_item_aliases.kind_id` đều trỏ vào `id`.
+
+⚠️ **Chỉ còn MỘT phép so chuỗi**: unique index `(user_id, lower(btrim(name)))` trên
+`product_kinds`, dùng **lúc tạo** để khỏi sinh hai "Basic". `IProductKindRepository.FindByKeyAsync`
+là chỗ duy nhất được phép tra theo tên, và nó chỉ phục vụ việc đó. Thêm chỗ tra theo tên
+là mở lại đúng cái bẫy vừa bỏ.
+
+⚠️ **`products.name` không còn là danh tính nhưng cũng chưa phải bản chiếu tự động** — và
+chưa cần, vì **chưa có đường nào đổi tên một mặt hàng**: chỗ ghi duy nhất là thêm/sửa sản
+phẩm, và cả ba đường đó đi qua `InventoryService.KindForAsync` nên hai bên không lệch được.
+Nếu sau này thêm chức năng đổi tên mặt hàng thì phải chọn một trong hai — cập nhật
+`products.name` trong cùng transaction, hoặc chuyển view `product_stock` sang đọc tên từ
+`product_kinds` rồi bỏ hẳn `products.name`.
+
+**`label_item_aliases` — bảng BÚT DANH, không phải ánh xạ một-một.** Nhiều dòng cùng trỏ
+một `kind_id`. Khoá tra cứu là (`source_name`, `variant`) chuẩn hoá bởi `LabelText.Key`.
+`kind_id IS NULL` = **bỏ qua dòng này** (hàng không theo dõi tồn), nhờ vậy một chuỗi lạ chỉ
+lạ đúng một lần. `units` = một món trên nhãn bằng mấy cái trong kho ("Combo 2 cái" = 2);
+thiếu nó là trừ sai gấp đôi, gấp mười mà con số vẫn trông hợp lý.
+
+⚠️ **`sku` trên nhãn KHÔNG dùng được làm khoá** — đo trên nhãn thật: rỗng trên mọi nhãn SPX
+*và* rỗng trên chính dòng Protect của TikTok.
+
+**`label_deductions` — chống trừ hai lần bằng khoá chính** `(user_id, order_code)`, không
+phải bằng luật ai đó phải nhớ kiểm. Không để cờ này trong `labels/<mã>.json` trên NAS (tải
+lại nhãn là ghi đè cả file), cũng không suy từ bảng `sales` (danh sách đó bị lọc và chặn số
+dòng ở tầng trên). `sale_group_id` luôn có giá trị ở đường tự động, kể cả đơn một dòng, để
+còn trả lời được "đơn này sinh ra những dòng bán nào".
+
+**Luật lúc trừ:** chưa ghép thì không trừ; **thiếu tồn thì không trừ gì cả** và trả 400 (để
+còn trừ lại được sau khi sửa tồn); trừ theo `batches.priority` rồi lô nhập trước, lô chưa
+đặt ưu tiên xếp **sau**; giá lấy `products.sell_price` vì nhãn không in giá. Tất cả trong
+**một** `SaveChangesAsync` — tách ra là đứt giữa đường thì hoặc mất tồn, hoặc chặn vĩnh viễn.
+
+Endpoint: `GET kinds`, `GET/PUT/DELETE label-aliases`, `GET deducted-codes`,
+`POST deduct-from-label`.
+
+**Đo thật:** 164/164 contract test (9 mới). Năm chốt đã thử phá, mỗi cái đúng số test đỏ nó
+giữ. Nạp lần đầu `db/018` chạy trên bản sao `pg_dump` của database thật: 8 tên thô → 7 mặt
+hàng, 0 dòng thiếu `kind_id`, chạy lại lần hai không sinh thêm.
+
 ## Việc chưa xong, không thuộc giai đoạn nào
 
 - [ ] **Lỗi JWT "issued at future"** bên Supabase vẫn chưa tìm ra nguyên nhân. API .NET

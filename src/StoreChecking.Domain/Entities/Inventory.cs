@@ -38,6 +38,19 @@ public class Product : IOwnedByUser
 
     public Guid BatchId { get; set; }
 
+    /// <summary>
+    /// Which kind this row is stock of. See <see cref="ProductKind"/>.
+    /// <para>Nullable only because the column was added to a table that already had rows;
+    /// the migration fills every one, and the write paths resolve a kind from the name, so
+    /// in practice it is always set.</para>
+    /// </summary>
+    public Guid? KindId { get; set; }
+
+    /// <summary>
+    /// Display text, kept equal to the kind's name.
+    /// <para>No longer the identity: <see cref="KindId"/> is. Nothing may look a product
+    /// up by this.</para>
+    /// </summary>
     public string Name { get; set; } = "";
 
     /// <summary>How many came in. What is left is this minus sold minus damaged.</summary>
@@ -121,6 +134,9 @@ public class ProductStock : IOwnedByUser
 
     /// <summary>Σ(quantity × price − shipping) for this product.</summary>
     public decimal Revenue { get; set; }
+
+    /// <summary>Which kind this stock belongs to. See <see cref="ProductKind"/>.</summary>
+    public Guid? KindId { get; set; }
 }
 
 /// <summary>

@@ -40,6 +40,9 @@ public sealed class ProductRepository(AppDbContext db) : IProductRepository
             .Where(x => x.Remaining > 0)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<Product>> ListByKindAsync(Guid kindId, CancellationToken ct = default) =>
+        await db.Products.Where(x => x.KindId == kindId).ToListAsync(ct);
+
     public void Add(Product row) => db.Products.Add(row);
     public void AddRange(IEnumerable<Product> rows) => db.Products.AddRange(rows);
     public void Remove(Product row) => db.Products.Remove(row);

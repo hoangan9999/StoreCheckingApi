@@ -34,6 +34,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser u
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<ProductDamage> ProductDamages => Set<ProductDamage>();
+    public DbSet<ProductKind> ProductKinds => Set<ProductKind>();
+    public DbSet<LabelItemAlias> LabelItemAliases => Set<LabelItemAlias>();
+    public DbSet<LabelDeduction> LabelDeductions => Set<LabelDeduction>();
 
     public DbSet<ProductStock> ProductStocks => Set<ProductStock>();
     public DbSet<BatchSummary> BatchSummaries => Set<BatchSummary>();

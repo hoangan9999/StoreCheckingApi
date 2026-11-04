@@ -17,6 +17,7 @@ public sealed class InventoryService(
     IProductRepository products,
     ISaleRepository sales,
     IProductDamageRepository damages,
+    IProductKindRepository kinds,
     ICurrentUser user,
     IUnitOfWork uow)
 {
@@ -30,6 +31,42 @@ public sealed class InventoryService(
 
     /// <summary>Unranked batches sort after every ranked one.</summary>
     private const int Unranked = int.MaxValue;
+
+    /// <summary>
+    /// The kind a product of this name belongs to, creating it the first time.
+    /// <para>Every path that writes a product name goes through here, so a product always
+    /// has a kind and anything mapping labels to stock has an id to point at. Typing an
+    /// existing name again lands on the existing kind: that lookup by text is the one
+    /// place it is allowed, and it exists precisely so a second "Basic" is never created.
+    /// </para>
+    /// <para><paramref name="pending"/> carries kinds made earlier in the same call but
+    /// not yet saved, which the repository cannot see yet. Without it, a new batch listing
+    /// "Basic" twice would try to insert that kind twice and hit the unique index.</para>
+    /// </summary>
+    private async Task<ProductKind> KindForAsync(
+        string name, Dictionary<string, ProductKind> pending, CancellationToken ct)
+    {
+        var key = LabelText.Key(name);
+        if (pending.TryGetValue(key, out var made)) return made;
+
+        var found = await kinds.FindByKeyAsync(key, ct);
+        if (found is not null)
+        {
+            pending[key] = found;
+            return found;
+        }
+
+        // Id assigned here rather than left to the column default: the product rows being
+        // built in this same call need it NOW to set their kind_id, and a database default
+        // only arrives after the save.
+        var row = new ProductKind
+        {
+            Id = Guid.NewGuid(), UserId = user.Id, Name = name, CreatedAt = DateTimeOffset.UtcNow,
+        };
+        kinds.Add(row);
+        pending[key] = row;
+        return row;
+    }
 
     // ---------- Batches ----------
 
@@ -82,16 +119,24 @@ public sealed class InventoryService(
         };
         batches.Add(batch);
 
-        var rows = (body.Products ?? [])
-            .Select(p => new Product
+        // A loop rather than Select: resolving the kind is a database lookup, and two
+        // products in one batch may name the same kind.
+        var pending = new Dictionary<string, ProductKind>();
+        var rows = new List<Product>();
+        foreach (var p in body.Products ?? [])
+        {
+            var kind = await KindForAsync(Required(p.Name, "Sản phẩm thiếu tên."), pending, ct);
+            rows.Add(new Product
             {
                 UserId = user.Id,
                 BatchId = batch.Id,
-                Name = Required(p.Name, "Sản phẩm thiếu tên."),
+                KindId = kind.Id,
+                // Mirrors the kind, so a name typed with stray spaces lands tidy.
+                Name = kind.Name,
                 Quantity = Guard(p.Quantity ?? 0, "Số lượng không được âm."),
                 SellPrice = GuardMoney(p.SellPrice ?? 0, "Giá bán không được âm."),
-            })
-            .ToList();
+            });
+        }
 
         if (rows.Count > 0) products.AddRange(rows);
 
@@ -174,11 +219,13 @@ public sealed class InventoryService(
         var batch = await batches.FindAsync(batchId, ct);
         if (batch is null) return null;
 
+        var kind = await KindForAsync(Required(body.Name, "Thiếu tên sản phẩm."), [], ct);
         var row = new Product
         {
             UserId = user.Id,
             BatchId = batch.Id,
-            Name = Required(body.Name, "Thiếu tên sản phẩm."),
+            KindId = kind.Id,
+            Name = kind.Name,
             Quantity = Guard(body.Quantity, "Số lượng không được âm."),
             SellPrice = GuardMoney(body.SellPrice, "Giá bán không được âm."),
         };
@@ -205,7 +252,12 @@ public sealed class InventoryService(
         if (quantity < committed)
             throw new ValidationException($"Đã bán hoặc hư {committed}, không thể giảm số lượng nhập xuống {quantity}.");
 
-        row.Name = Required(body.Name, "Thiếu tên sản phẩm.");
+        // Renaming re-resolves the kind, which moves this row to another kind when the new
+        // name is one that already exists. That is the intent: the row now holds Premium,
+        // not Basic. Aliases keep pointing at the kind they were mapped to.
+        var kind = await KindForAsync(Required(body.Name, "Thiếu tên sản phẩm."), [], ct);
+        row.KindId = kind.Id;
+        row.Name = kind.Name;
         row.Quantity = quantity;
         row.SellPrice = GuardMoney(body.SellPrice, "Giá bán không được âm.");
 

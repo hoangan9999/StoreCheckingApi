@@ -28,6 +28,14 @@ public interface IProductRepository
     /// <summary>Everything still in stock anywhere, for picking when selling.</summary>
     Task<IReadOnlyList<ProductStock>> InStockAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Every product row of one kind, across all batches.
+    /// <para>The caller decides which batch to draw from, so this returns them all rather
+    /// than only the ones with stock left: "this kind exists but is empty everywhere" and
+    /// "this kind does not exist" are different answers.</para>
+    /// </summary>
+    Task<IReadOnlyList<Product>> ListByKindAsync(Guid kindId, CancellationToken ct = default);
+
     void Add(Product row);
     void AddRange(IEnumerable<Product> rows);
     void Remove(Product row);

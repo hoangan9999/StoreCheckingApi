@@ -15,7 +15,9 @@ namespace StoreChecking.Api.Controllers;
 [Route("api/inventory")]
 [Tags("Kho hàng")]
 [Produces("application/json")]
-public sealed class InventoryController(InventoryService inventory) : ControllerBase
+public sealed class InventoryController(
+    InventoryService inventory,
+    LabelDeductionService labels) : ControllerBase
 {
     // ---------- Lô hàng ----------
 
@@ -155,4 +157,43 @@ public sealed class InventoryController(InventoryService inventory) : Controller
     [HttpDelete("damages/{id:guid}")]
     public async Task<IActionResult> DeleteDamage(Guid id, CancellationToken ct) =>
         await inventory.DeleteDamageAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Mặt hàng & ghép nhãn ----------
+
+    /// <summary>Danh sách mặt hàng kèm tồn còn lại — dùng cho ô chọn khi ghép nhãn.</summary>
+    [HttpGet("kinds")]
+    public async Task<IActionResult> ListKinds(CancellationToken ct) =>
+        Ok(await labels.ListKindsAsync(ct));
+
+    /// <summary>Các bút danh đã ghép: chữ trên nhãn ứng với mặt hàng nào, mỗi món mấy cái.</summary>
+    [HttpGet("label-aliases")]
+    public async Task<IActionResult> ListAliases(CancellationToken ct) =>
+        Ok(await labels.ListAliasesAsync(ct));
+
+    /// <summary>Ghép một chữ trên nhãn vào mặt hàng, hoặc đánh dấu bỏ qua (kindId rỗng).</summary>
+    /// <remarks>Ghi đè theo (sourceName, variant) nên sửa một bút danh ghép sai cũng dùng đúng lời gọi này.</remarks>
+    [HttpPut("label-aliases")]
+    public async Task<IActionResult> SaveAlias([FromBody] SaveLabelAliasRequest body, CancellationToken ct) =>
+        Ok(await labels.SaveAliasAsync(body, ct));
+
+    /// <summary>Bỏ một bút danh. Chữ đó sẽ quay lại danh sách "chưa ghép".</summary>
+    [HttpDelete("label-aliases/{id:guid}")]
+    public async Task<IActionResult> DeleteAlias(Guid id, CancellationToken ct) =>
+        await labels.DeleteAliasAsync(id, ct) ? NoContent() : NotFound();
+
+    /// <summary>Mã đơn đã trừ tồn rồi — để client biết nhãn nào khỏi phải hỏi lại.</summary>
+    /// <remarks>Chỉ để đỡ gọi vô ích; chống trừ hai lần là khoá chính trong database, không phải danh sách này.</remarks>
+    [HttpGet("deducted-codes")]
+    public async Task<IActionResult> DeductedCodes(CancellationToken ct) =>
+        Ok(await labels.ListDeductedCodesAsync(ct));
+
+    /// <summary>Trừ tồn cho một đơn, theo danh sách món đọc được trên nhãn.</summary>
+    /// <remarks>
+    /// Gọi lại cùng một mã đơn là an toàn: lần sau trả về cờ alreadyDone chứ không trừ thêm.
+    /// Thiếu tồn thì KHÔNG trừ gì cả và trả 400 — để còn trừ lại được sau khi sửa tồn.
+    /// </remarks>
+    [HttpPost("deduct-from-label")]
+    public async Task<IActionResult> DeductFromLabel(
+        [FromBody] DeductFromLabelRequest body, CancellationToken ct) =>
+        Ok(await labels.DeductAsync(body, ct));
 }

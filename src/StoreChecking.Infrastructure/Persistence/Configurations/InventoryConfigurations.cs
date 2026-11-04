@@ -31,11 +31,13 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.UserId).HasColumnName("user_id");
         e.Property(x => x.BatchId).HasColumnName("batch_id");
+        e.Property(x => x.KindId).HasColumnName("kind_id");
         e.Property(x => x.Name).HasColumnName("name");
         e.Property(x => x.Quantity).HasColumnName("quantity");
         e.Property(x => x.SellPrice).HasColumnName("sell_price").HasColumnType("numeric(14,2)");
         e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         e.HasIndex(x => x.BatchId);
+        e.HasIndex(x => x.KindId);
     }
 }
 
@@ -98,6 +100,7 @@ public sealed class ProductStockConfiguration : IEntityTypeConfiguration<Product
         e.Property(x => x.DamagedQty).HasColumnName("damaged_qty");
         e.Property(x => x.Remaining).HasColumnName("remaining");
         e.Property(x => x.Revenue).HasColumnName("revenue");
+        e.Property(x => x.KindId).HasColumnName("kind_id");
     }
 }
 

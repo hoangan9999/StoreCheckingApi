@@ -92,6 +92,9 @@ public static class DependencyInjection
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<ISaleRepository, SaleRepository>();
         services.AddScoped<IProductDamageRepository, ProductDamageRepository>();
+        services.AddScoped<IProductKindRepository, ProductKindRepository>();
+        services.AddScoped<ILabelItemAliasRepository, LabelItemAliasRepository>();
+        services.AddScoped<ILabelDeductionRepository, LabelDeductionRepository>();
         services.AddScoped<IBackupRepository, BackupRepository>();
 
         // ---------- Application services ----------
@@ -104,6 +107,7 @@ public static class DependencyInjection
         services.AddScoped<PackingService>();
         services.AddScoped<ExpensesService>();
         services.AddScoped<InventoryService>();
+        services.AddScoped<LabelDeductionService>();
         services.AddScoped<BackupService>();
 
         return services;
