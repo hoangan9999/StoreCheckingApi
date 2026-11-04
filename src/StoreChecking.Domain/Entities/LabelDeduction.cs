@@ -82,14 +82,22 @@ public class LabelDeduction : IOwnedByUser
     public string OrderCode { get; set; } = "";
 
     /// <summary>
-    /// Always set here, even for a single line.
-    /// <para>The manual path leaves it null for a one-line order so old and new rows look
-    /// alike. This path needs to answer "which sale lines came from this order" so they
-    /// can be undone, so it always groups.</para>
+    /// The sale lines this deduction created, or <c>null</c> when it created none.
+    /// <para>Always set when this app did the deducting, even for a single line, so that
+    /// "which sale lines came from this order" has an answer and they can be undone. (The
+    /// manual selling path leaves a one-line order ungrouped, to keep old and new rows
+    /// looking alike; that reasoning does not apply here.)</para>
+    /// <para><c>null</c> means the order was settled OUTSIDE the app — stock entered by
+    /// hand before this feature existed, see <c>db/020</c>. A made-up group id would be an
+    /// id pointing at nothing, so the absence is recorded instead.</para>
     /// </summary>
-    public Guid SaleGroupId { get; set; }
+    public Guid? SaleGroupId { get; set; }
 
-    /// <summary>Units taken off, so a check does not have to re-add the sale lines.</summary>
+    /// <summary>
+    /// Units taken off, so a check does not have to re-add the sale lines.
+    /// <para>0 goes with a null <see cref="SaleGroupId"/>: the true figure for an order
+    /// this app deducted nothing for.</para>
+    /// </summary>
     public int UnitsTotal { get; set; }
 
     public DateTimeOffset DeductedAt { get; set; }

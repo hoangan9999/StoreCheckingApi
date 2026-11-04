@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Npgsql;
 
 namespace StoreChecking.ContractTests;
 
@@ -235,6 +236,44 @@ public sealed class LabelDeductionContractTests(ApiFactory api)
         var rows = await Json.Read(await c.GetAsync("/api/inventory/label-aliases"));
         Assert.Equal(1, rows.GetArrayLength());
         Assert.Equal(10, rows[0].GetProperty("units").GetInt32());
+    }
+
+    // ---------- Đơn đã chốt bằng tay ----------
+
+    /**
+     * Đơn nhập tay từ trước phải chặn được, và đó là hình dạng `db/020` ghi ra.
+     *
+     * <p>Chèn thẳng bằng SQL vì không có endpoint nào tạo dòng này: nó do migration nạp
+     * một lần. Đây chính là ca sẽ xảy ra thật mỗi lần tải lại một nhãn cũ để in — không có
+     * nó thì app trừ thêm một lần, đè lên con số đã nhập tay, không báo gì.</p>
+     */
+    [DbFact]
+    public async Task Don_chot_bang_tay_thi_khong_tru_them()
+    {
+        var user = Guid.NewGuid();
+        var c = api.ClientFor(user);
+        var (_, kind) = await NewBatch(c);
+        await MapAlias(c, kind, 2);
+
+        await using var conn = new NpgsqlConnection(TestDatabase.ConnectionString);
+        await conn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand(
+            """
+            insert into label_deductions (user_id, order_code, sale_group_id, units_total)
+            values (@u, 'TTVN1120954411', null::uuid, 0)
+            """, conn))
+        {
+            cmd.Parameters.AddWithValue("u", user);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var body = await Json.Read(await Deduct(c, "TTVN1120954411", qty: 2));
+
+        Assert.True(body.GetProperty("alreadyDone").GetBoolean());
+        Assert.False(body.GetProperty("deducted").GetBoolean());
+        // Nhóm bán rỗng, vì app chưa từng ghi dòng bán nào cho đơn này.
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("saleGroupId").ValueKind);
+        Assert.Equal(100, await Remaining(c, kind));
     }
 
     // ---------- Hợp đồng với client ----------

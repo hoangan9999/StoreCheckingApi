@@ -890,7 +890,31 @@ còn trừ lại được sau khi sửa tồn); trừ theo `batches.priority` r�
 Endpoint: `GET kinds`, `GET/PUT/DELETE label-aliases`, `GET deducted-codes`,
 `POST deduct-from-label`.
 
-**Đo thật:** 164/164 contract test (9 mới). Năm chốt đã thử phá, mỗi cái đúng số test đỏ nó
+### `db/020` — chốt mọi đơn có trước, 2026-11-04
+
+Số tồn của những đơn đó **đã nhập tay** rồi. Không chốt thì cứ tải lại một nhãn cũ để in
+lại — việc vẫn làm thường xuyên — là đơn đó `packed = true`, app trừ thêm một lần nữa, **đè
+lên con số đã nhập tay và không có gì báo**.
+
+Chốt bằng đúng cơ chế đã có: ghi một dòng `label_deductions` cho từng đơn trong
+`packing_videos`, `sale_group_id` để **NULL** = "chốt ngoài app" (gán một nhóm bịa ra là
+một id trỏ vào chỗ không có gì), `units_total = 0`. Từ đó khoá chính lo phần còn lại.
+
+Lấy theo `packing_videos` chứ không theo nhãn đã tải lên: bằng chứng "đơn này đã vào sổ
+bằng tay" là đơn đã đóng gói, còn nhãn thì có thể tải sau hoặc chưa tải bao giờ. Đo trên
+bản sao `pg_dump` của database thật: **264/264** đơn được chốt, tất cả `sale_group_id` rỗng
+và `units_total` bằng 0.
+
+⚠️ **Khối nạp của `db/020` chạy đúng một lần, và đó là điều kiện để nó đúng.** Chạy lại là
+mọi đơn đóng gói MỚI cũng bị đánh dấu đã chốt, tức không bao giờ được trừ tồn nữa. Đừng sửa
+file đó, và đừng xoá dòng của nó trong `schema_history`.
+
+⚠️ **`null` trần trong `select` bị Postgres suy thành `text`** và từ chối ghi vào cột
+`uuid`. Lần đầu viết `db/020` thiếu `null::uuid`: migration đổ, schema không dựng xong và
+**160 contract test đỏ cùng lúc** — tức API cũng sẽ không khởi động nổi. Đó là lần bộ test
+chặn được một lỗi lẽ ra làm sập production.
+
+**Đo thật:** 165/165 contract test (10 mới). Sáu chốt đã thử phá, mỗi cái đúng số test đỏ nó
 giữ. Nạp lần đầu `db/018` chạy trên bản sao `pg_dump` của database thật: 8 tên thô → 7 mặt
 hàng, 0 dòng thiếu `kind_id`, chạy lại lần hai không sinh thêm.
 
