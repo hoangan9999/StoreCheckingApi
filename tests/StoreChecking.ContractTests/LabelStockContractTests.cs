@@ -49,8 +49,8 @@ public sealed class LabelStockContractTests(ApiFactory api)
             lines = new[] { new { sourceName = name, variant, labelQty, productId, quantity } },
         });
 
-    private static Task<HttpResponseMessage> Skip(HttpClient c, string code) =>
-        c.PostJson("/api/inventory/label-actions/skip", new { orderCode = code });
+    private static Task<HttpResponseMessage> Skip(HttpClient c, params string[] codes) =>
+        c.PostJson("/api/inventory/label-actions/skip", new { orderCodes = codes });
 
     private static async Task<long> Remaining(HttpClient c, Guid productId)
     {
@@ -189,14 +189,68 @@ public sealed class LabelStockContractTests(ApiFactory api)
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
         var body = await Json.Read(res);
-        Json.HasExactly(body, "orderCode", "status", "saleGroupId", "unitsTotal", "actedAt", "canUndo");
-        Assert.Equal("skipped", body.GetProperty("status").GetString());
-        Assert.Equal(JsonValueKind.Null, body.GetProperty("saleGroupId").ValueKind);
-        Assert.Equal(0, body.GetProperty("unitsTotal").GetInt32());
-        Assert.True(body.GetProperty("canUndo").GetBoolean());
+        Json.HasExactly(body, "skipped", "alreadyDecided");
+        Assert.Equal(1, body.GetProperty("skipped").GetInt32());
+        Assert.Empty(body.GetProperty("alreadyDecided").EnumerateArray());
 
         Assert.Equal(100, await Remaining(c, product));
+
+        var actions = await Json.Read(await c.GetAsync("/api/inventory/label-actions"));
+        var row = actions.GetProperty("recent")[0];
+        Assert.Equal("skipped", row.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("saleGroupId").ValueKind);
+        Assert.Equal(0, row.GetProperty("unitsTotal").GetInt32());
+        Assert.True(row.GetProperty("canUndo").GetBoolean());
     }
+
+    // Tick cả mẻ rồi bỏ qua một lượt là cách dùng bình thường — một request, không phải
+    // hai trăm.
+    [DbFact]
+    public async Task Bo_qua_ca_me_trong_mot_luot()
+    {
+        var c = NewUser();
+
+        var res = await Skip(c, "SPX-A", "SPX-B", "SPX-C");
+        Assert.Equal(3, (await Json.Read(res)).GetProperty("skipped").GetInt32());
+
+        var actions = await Json.Read(await c.GetAsync("/api/inventory/label-actions"));
+        Assert.Equal(
+            ["SPX-A", "SPX-B", "SPX-C"],
+            actions.GetProperty("codes").EnumerateArray().Select(x => x.GetString()!).Order().ToArray());
+    }
+
+    // Màn hình lỡ cũ một phút thì một mã đã xử lý KHÔNG được làm hỏng 199 mã còn lại —
+    // nhưng cũng không được lặng lẽ trôi qua.
+    [DbFact]
+    public async Task Ma_da_xu_ly_lan_trong_me_thi_bao_lai_chu_khong_do_ca_me()
+    {
+        var c = NewUser();
+        var product = await NewProduct(c);
+        await Deduct(c, "DA-TRU", product, 1);
+
+        var body = await Json.Read(await Skip(c, "MOI-1", "DA-TRU", "MOI-2"));
+
+        Assert.Equal(2, body.GetProperty("skipped").GetInt32());
+        Assert.Equal(["DA-TRU"],
+            body.GetProperty("alreadyDecided").EnumerateArray().Select(x => x.GetString()!).ToArray());
+
+        // Và mã đã trừ vẫn là "đã trừ", không bị đổi thành bỏ qua.
+        var actions = await Json.Read(await c.GetAsync("/api/inventory/label-actions"));
+        var daTru = actions.GetProperty("recent").EnumerateArray()
+            .First(x => x.GetProperty("orderCode").GetString() == "DA-TRU");
+        Assert.Equal("deducted", daTru.GetProperty("status").GetString());
+    }
+
+    [DbFact]
+    public async Task Bo_qua_ma_rong_thi_400()
+    {
+        var res = await NewUser().PostJson("/api/inventory/label-actions/skip",
+            new { orderCodes = Array.Empty<string>() });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Equal("Thiếu mã đơn.", (await Json.Read(res)).GetProperty("error").GetString());
+    }
+
 
     // ---------- Danh sách ----------
 

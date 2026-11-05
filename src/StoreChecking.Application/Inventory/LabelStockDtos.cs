@@ -76,8 +76,23 @@ public record DeductLine(
 /// <summary>Take one label's stock off, from choices a person made.</summary>
 public record DeductFromLabelRequest(string OrderCode, IReadOnlyList<DeductLine>? Lines);
 
-/// <summary>Mark one label as looked at and deliberately passed over.</summary>
-public record SkipLabelRequest(string OrderCode);
+/// <summary>
+/// Mark labels as looked at and deliberately passed over.
+/// <para>Takes a list rather than one code because clearing a backlog is the normal use:
+/// tick the lot, pass them over in one go. One request per label would be hundreds of
+/// round trips for a thing the person thinks of as a single action.</para>
+/// </summary>
+public record SkipLabelRequest(IReadOnlyList<string>? OrderCodes);
+
+/// <summary>
+/// What a skip did.
+/// </summary>
+/// <param name="AlreadyDecided">
+/// Codes passed over because something had already been decided about them. Reported
+/// rather than swallowed: a screen that was a minute out of date should say so, not
+/// quietly do less than it was asked.
+/// </param>
+public record SkipLabelsResult(int Skipped, IReadOnlyList<string> AlreadyDecided);
 
 /// <summary>What one product lost.</summary>
 public record DeductedProduct(Guid ProductId, string ProductName, string BatchName, int Quantity);

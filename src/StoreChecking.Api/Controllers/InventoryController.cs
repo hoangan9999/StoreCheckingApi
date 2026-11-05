@@ -188,7 +188,8 @@ public sealed class InventoryController(
         [FromBody] DeductFromLabelRequest body, CancellationToken ct) =>
         Ok(await labels.DeductAsync(body, ct));
 
-    /// <summary>Đánh dấu một nhãn là đã xem và cố ý bỏ qua — hàng không theo dõi tồn.</summary>
+    /// <summary>Đánh dấu nhãn là đã xem và cố ý bỏ qua — hàng không theo dõi tồn.</summary>
+    /// <remarks>Nhận cả danh sách: tick cả mẻ rồi bỏ qua một lượt là cách dùng bình thường, không phải ngoại lệ.</remarks>
     [HttpPost("label-actions/skip")]
     public async Task<IActionResult> SkipLabel([FromBody] SkipLabelRequest body, CancellationToken ct) =>
         Ok(await labels.SkipAsync(body, ct));

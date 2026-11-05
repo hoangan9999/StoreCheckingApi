@@ -170,27 +170,47 @@ public sealed class LabelStockService(
         return new DeductFromLabelResult(code, groupId, total, taken);
     }
 
-    /// <summary>Record that a label was looked at and deliberately passed over.</summary>
-    public async Task<LabelActionDto> SkipAsync(SkipLabelRequest body, CancellationToken ct = default)
+    /// <summary>
+    /// Record that labels were looked at and deliberately passed over.
+    /// <para>Codes already decided are reported back rather than treated as failures: with
+    /// a whole backlog ticked at once, one stale entry must not throw away the other two
+    /// hundred, and it must not pass unmentioned either.</para>
+    /// </summary>
+    public async Task<SkipLabelsResult> SkipAsync(SkipLabelRequest body, CancellationToken ct = default)
     {
-        var code = (body.OrderCode ?? "").Trim();
-        if (code.Length == 0) throw new ValidationException("Thiếu mã đơn.");
+        var codes = (body.OrderCodes ?? [])
+            .Select(c => (c ?? "").Trim())
+            .Where(c => c.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
-        await RefuseIfDecided(code, ct);
+        if (codes.Count == 0) throw new ValidationException("Thiếu mã đơn.");
 
-        var row = new LabelStockAction
+        // Read the decided set ONCE. Asking per code turns a two-hundred-label skip into
+        // two hundred queries inside one request.
+        var decided = (await actions.ListCodesAsync(ct)).ToHashSet(StringComparer.Ordinal);
+        var now = DateTimeOffset.UtcNow;
+        var already = new List<string>();
+        var added = 0;
+
+        foreach (var code in codes)
         {
-            UserId = user.Id,
-            OrderCode = code,
-            Status = LabelStockAction.Skipped,
-            SaleGroupId = null,
-            UnitsTotal = 0,
-            ActedAt = DateTimeOffset.UtcNow,
-        };
-        actions.Add(row);
-        await uow.SaveChangesAsync(ct);
+            if (!decided.Add(code)) { already.Add(code); continue; }
 
-        return new LabelActionDto(row.OrderCode, row.Status, null, 0, row.ActedAt, true);
+            actions.Add(new LabelStockAction
+            {
+                UserId = user.Id,
+                OrderCode = code,
+                Status = LabelStockAction.Skipped,
+                SaleGroupId = null,
+                UnitsTotal = 0,
+                ActedAt = now,
+            });
+            added++;
+        }
+
+        if (added > 0) await uow.SaveChangesAsync(ct);
+        return new SkipLabelsResult(added, already);
     }
 
     /// <summary>
