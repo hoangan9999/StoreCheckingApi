@@ -38,19 +38,21 @@ public sealed class LabelItemAliasConfiguration : IEntityTypeConfiguration<Label
     }
 }
 
-public sealed class LabelDeductionConfiguration : IEntityTypeConfiguration<LabelDeduction>
+public sealed class LabelStockActionConfiguration : IEntityTypeConfiguration<LabelStockAction>
 {
-    public void Configure(EntityTypeBuilder<LabelDeduction> e)
+    public void Configure(EntityTypeBuilder<LabelStockAction> e)
     {
-        e.ToTable("label_deductions");
+        e.ToTable("label_stock_actions");
         // The composite key IS the guard against deducting twice, so it is the primary key
         // rather than a surrogate id with a unique index beside it.
         e.HasKey(x => new { x.UserId, x.OrderCode });
         e.Property(x => x.UserId).HasColumnName("user_id");
         e.Property(x => x.OrderCode).HasColumnName("order_code");
+        e.Property(x => x.Status).HasColumnName("status").HasDefaultValue(LabelStockAction.Deducted);
         e.Property(x => x.SaleGroupId).HasColumnName("sale_group_id");
         e.Property(x => x.UnitsTotal).HasColumnName("units_total");
-        e.Property(x => x.DeductedAt).HasColumnName("deducted_at").HasDefaultValueSql("now()");
+        e.Property(x => x.ActedAt).HasColumnName("acted_at").HasDefaultValueSql("now()");
         e.HasIndex(x => new { x.UserId, x.SaleGroupId });
+        e.HasIndex(x => new { x.UserId, x.ActedAt });
     }
 }

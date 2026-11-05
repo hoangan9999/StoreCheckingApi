@@ -18,6 +18,7 @@ public sealed class InventoryService(
     ISaleRepository sales,
     IProductDamageRepository damages,
     IProductKindRepository kinds,
+    ILabelStockActionRepository labelActions,
     ICurrentUser user,
     IUnitOfWork uow)
 {
@@ -290,7 +291,7 @@ public sealed class InventoryService(
                 return new StockItemDto(
                     p.Id, p.Name, p.BatchId,
                     batch?.Name ?? "(lô?)", batch?.Priority,
-                    p.SellPrice, p.Remaining);
+                    p.SellPrice, p.Remaining, p.KindId);
             })
             .OrderBy(x => x.BatchPriority ?? Unranked)
             .ThenBy(x => x.BatchName, StringComparer.CurrentCulture)
@@ -425,7 +426,16 @@ public sealed class InventoryService(
         var row = await sales.FindAsync(id, ct);
         if (row is null) return false;
 
-        sales.Remove(row);
+        // A row written by a label deduction is one line of one decision, and there is no
+        // half of that decision. So deleting any of them undoes the whole label — which
+        // also returns it to the pending list, where it can be done again properly. The
+        // alternative is a record saying "deducted 5" sitting over rows adding up to 3,
+        // wrong in a way nothing would ever point out.
+        if (row.SaleGroupId is Guid groupId && await ClearLabelActionAsync(groupId, ct))
+            sales.RemoveRange(await sales.ListByGroupAsync(groupId, ct));
+        else
+            sales.Remove(row);
+
         await uow.SaveChangesAsync(ct);
         return true;
     }
@@ -437,9 +447,26 @@ public sealed class InventoryService(
         var rows = await sales.ListByGroupAsync(groupId, ct);
         if (rows.Count == 0) return 0;
 
+        await ClearLabelActionAsync(groupId, ct);
         sales.RemoveRange(rows);
         await uow.SaveChangesAsync(ct);
         return rows.Count;
+    }
+
+    /// <summary>
+    /// Drops the "this label is done" record for a group of sale rows about to go.
+    /// <para>Without this the label stays marked for ever: its sale rows are gone, the
+    /// stock is back, and the deduction screen still refuses to show it. Nothing would
+    /// report that — it is exactly the kind of silence this project keeps paying for.</para>
+    /// </summary>
+    /// <returns><c>false</c> when the group did not come from a label.</returns>
+    private async Task<bool> ClearLabelActionAsync(Guid groupId, CancellationToken ct)
+    {
+        var rows = await labelActions.ListByGroupAsync(groupId, ct);
+        if (rows.Count == 0) return false;
+
+        labelActions.RemoveRange(rows);
+        return true;
     }
 
     // ---------- Damages ----------

@@ -44,7 +44,7 @@ public record SaveProductRequest(string Name, int Quantity, decimal SellPrice);
 /// <summary>A product still in stock, ready to be picked when selling.</summary>
 public record StockItemDto(
     Guid Id, string Name, Guid BatchId, string BatchName, int? BatchPriority,
-    decimal SellPrice, long Remaining);
+    decimal SellPrice, long Remaining, Guid? KindId);
 
 // ---------- Sales ----------
 

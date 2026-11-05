@@ -65,40 +65,49 @@ public class LabelItemAlias : IOwnedByUser
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+
 /// <summary>
-/// Proof that one order's stock has already come off, so it cannot come off twice.
-/// <para>This has to be a real row. The label's own JSON file on the NAS is rewritten
-/// whole whenever the label is uploaded again, which would clear the flag; and the sales
-/// table cannot answer the question either, because the history that reads it is filtered
-/// by date and capped, so "not in the list" does not mean "not deducted".</para>
+/// What was decided about one label: its stock was taken off, or it was deliberately
+/// passed over. A label with no row here is one nobody has looked at yet.
+/// <para>Nothing decides this on its own. A label prints a name and a quantity, and a
+/// batch holds products with a name and a quantity, with no id in common — so there is no
+/// ground on which code could claim that a given line means a given product. The person
+/// packing the order knows; this records what they said.</para>
+/// <para>It has to be a real row. The label's own JSON on the NAS is rewritten whole every
+/// time the label is uploaded again, which would wipe the decision; and the sales table
+/// cannot answer either, because the history reading it is filtered by date and capped, so
+/// "not in the list" never means "not deducted".</para>
 /// <para>The key is (<see cref="UserId"/>, <see cref="OrderCode"/>), which makes a second
-/// deduction a database error rather than a rule somebody has to remember to check.</para>
+/// deduction a database error rather than a rule somebody has to remember.</para>
 /// </summary>
-public class LabelDeduction : IOwnedByUser
+public class LabelStockAction : IOwnedByUser
 {
+    /// <summary>Stock came off for this label.</summary>
+    public const string Deducted = "deducted";
+
+    /// <summary>Looked at and passed over on purpose — not stock this shop tracks.</summary>
+    public const string Skipped = "skipped";
+
     public Guid UserId { get; set; }
 
     /// <summary>Tracking code — what packing scanned, and the label's file name on the NAS.</summary>
     public string OrderCode { get; set; } = "";
 
+    /// <summary><see cref="Deducted"/> or <see cref="Skipped"/>.</summary>
+    public string Status { get; set; } = Deducted;
+
     /// <summary>
-    /// The sale lines this deduction created, or <c>null</c> when it created none.
-    /// <para>Always set when this app did the deducting, even for a single line, so that
-    /// "which sale lines came from this order" has an answer and they can be undone. (The
-    /// manual selling path leaves a one-line order ungrouped, to keep old and new rows
-    /// looking alike; that reasoning does not apply here.)</para>
-    /// <para><c>null</c> means the order was settled OUTSIDE the app — stock entered by
-    /// hand before this feature existed, see <c>db/020</c>. A made-up group id would be an
-    /// id pointing at nothing, so the absence is recorded instead.</para>
+    /// The sale lines this created; <c>null</c> for a skip.
+    /// <para>Always set when stock came off, even for a single line, because it is the
+    /// only way back from "this order" to "these sale rows" — which is what undoing needs.
+    /// (The manual selling path leaves a one-line order ungrouped so old and new rows look
+    /// alike; that reasoning does not apply here.)</para>
     /// </summary>
     public Guid? SaleGroupId { get; set; }
 
-    /// <summary>
-    /// Units taken off, so a check does not have to re-add the sale lines.
-    /// <para>0 goes with a null <see cref="SaleGroupId"/>: the true figure for an order
-    /// this app deducted nothing for.</para>
-    /// </summary>
+    /// <summary>Units taken off, so a check never has to re-add the sale lines. 0 for a skip.</summary>
     public int UnitsTotal { get; set; }
 
-    public DateTimeOffset DeductedAt { get; set; }
+    /// <summary>When the decision was made. The undo window is measured from here.</summary>
+    public DateTimeOffset ActedAt { get; set; }
 }

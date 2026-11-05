@@ -30,28 +30,32 @@ public sealed class LabelItemAliasRepository(AppDbContext db) : ILabelItemAliasR
     public async Task<IReadOnlyList<LabelItemAlias>> ListAsync(CancellationToken ct = default) =>
         await db.LabelItemAliases.OrderBy(x => x.Display).ToListAsync(ct);
 
-    public Task<LabelItemAlias?> FindAsync(Guid id, CancellationToken ct = default) =>
-        db.LabelItemAliases.FirstOrDefaultAsync(x => x.Id == id, ct);
-
     public Task<LabelItemAlias?> FindByKeyAsync(string sourceName, string variant, CancellationToken ct = default) =>
         db.LabelItemAliases.FirstOrDefaultAsync(x => x.SourceName == sourceName && x.Variant == variant, ct);
 
     public void Add(LabelItemAlias row) => db.LabelItemAliases.Add(row);
-    public void Remove(LabelItemAlias row) => db.LabelItemAliases.Remove(row);
 }
 
-public sealed class LabelDeductionRepository(AppDbContext db) : ILabelDeductionRepository
+public sealed class LabelStockActionRepository(AppDbContext db) : ILabelStockActionRepository
 {
-    public Task<LabelDeduction?> FindAsync(string orderCode, CancellationToken ct = default) =>
-        db.LabelDeductions.FirstOrDefaultAsync(x => x.OrderCode == orderCode, ct);
+    public Task<LabelStockAction?> FindAsync(string orderCode, CancellationToken ct = default) =>
+        db.LabelStockActions.FirstOrDefaultAsync(x => x.OrderCode == orderCode, ct);
 
     public async Task<IReadOnlyList<string>> ListCodesAsync(CancellationToken ct = default) =>
-        await db.LabelDeductions.Select(x => x.OrderCode).ToListAsync(ct);
+        await db.LabelStockActions.Select(x => x.OrderCode).ToListAsync(ct);
 
-    public async Task<IReadOnlyList<LabelDeduction>> ListByGroupAsync(
+    public async Task<IReadOnlyList<LabelStockAction>> ListSinceAsync(
+        DateTimeOffset since, CancellationToken ct = default) =>
+        await db.LabelStockActions
+            .Where(x => x.ActedAt >= since)
+            .OrderByDescending(x => x.ActedAt)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<LabelStockAction>> ListByGroupAsync(
         Guid saleGroupId, CancellationToken ct = default) =>
-        await db.LabelDeductions.Where(x => x.SaleGroupId == saleGroupId).ToListAsync(ct);
+        await db.LabelStockActions.Where(x => x.SaleGroupId == saleGroupId).ToListAsync(ct);
 
-    public void Add(LabelDeduction row) => db.LabelDeductions.Add(row);
-    public void Remove(LabelDeduction row) => db.LabelDeductions.Remove(row);
+    public void Add(LabelStockAction row) => db.LabelStockActions.Add(row);
+    public void Remove(LabelStockAction row) => db.LabelStockActions.Remove(row);
+    public void RemoveRange(IEnumerable<LabelStockAction> rows) => db.LabelStockActions.RemoveRange(rows);
 }

@@ -202,6 +202,59 @@ Vân tay chỉ được ghi SAU khi gửi thành công.
 
 **Chỗ lưu trên NAS:** `/volume1/PackingVideos/videos/db-backup/` và `.../media-backup/`.
 
+### ↩️ Trừ tồn theo nhãn — VIẾT LẠI 2026-11-05: bỏ tự ghép, người quyết định
+
+Bản ngày 2026-11-04 (`db/019`, `db/020`) tự suy ra nhãn nói tới mặt hàng nào rồi tự trừ.
+**Giả định đó sai, và sai ở chỗ không sửa được bằng code:**
+
+> Nhãn chỉ in **tên + số lượng**. Sản phẩm trong lô cũng chỉ có **tên + số lượng**.
+> Hai đầu không có mã nào chung — không có gì để join. Mọi phép ghép đều là đoán.
+
+Đoán sai thì trừ nhầm mặt hàng, **không kêu một tiếng nào**, chỉ lộ ra lúc kiểm kho lệch
+— mà lúc đó không truy lại được đơn nào gây ra. Cùng đúng một kiểu hỏng với ba thứ ở mục
+Chuyển dữ liệu.
+
+**Nay: không có gì tự trừ.** Tải nhãn lên chỉ còn làm một việc là gắn nhãn vào video đơn
+đóng (phần đó giữ nguyên). Trừ tồn là thao tác riêng:
+
+| Ở đâu | Làm gì |
+|---|---|
+| Tab **Lô hàng** → nút **Trừ tồn** | Mở danh sách nhãn chưa xử lý, mới nhất trước |
+| Mở một nhãn | Đọc `labels/<mã>.json` trên NAS, hiện từng dòng + ô chọn **sản phẩm trong lô** |
+| Bấm **Trừ tồn** | Trừ đúng những dòng đã chọn, bỏ trống dòng nào thì không đụng dòng đó |
+| Bấm **Bỏ qua** | Hàng không theo dõi tồn. Ghi nhận, không sinh dòng bán nào |
+| Mục **Đã xử lý** | 7 ngày gần nhất, có nút **Hoàn lại** |
+
+Bảng `label_deductions` đổi tên thành **`label_stock_actions`** và thêm cột `status`
+(`deducted` / `skipped`). Đổi tên vì nó đổi nghĩa: một bảng tên "deductions" mà quá nửa
+số dòng là "không trừ gì cả" chính là kiểu đặt tên đánh lừa người đọc sau. **Không có
+hàng nào = chưa xử lý** — trạng thái thứ ba là sự vắng mặt, nên danh sách chờ không bao
+giờ lệch với thực tế.
+
+**`db/021` xoá hết dấu chốt hàng loạt của `db/020`.** `db/020` đánh dấu mọi đơn từng đóng
+gói là xong, để bản TỰ trừ khỏi trừ đè lên số đã nhập tay. Lý lẽ đó chỉ đúng với một hệ
+thống tự trừ; nay người dùng tự quyết định thì chốt sẵn hộ là lấy mất đúng cái quyền vừa
+trao. Nhận diện chính xác dòng của `db/020` bằng `sale_group_id is null and units_total =
+0` — ràng buộc cũ bảo đảm hai thứ đó luôn đi cùng nhau, nên dòng do app thật sự trừ không
+bị đụng.
+
+**Gợi ý vẫn còn, nhưng chỉ là gợi ý.** `label_item_aliases` nay được ghi như một *hệ quả*
+của việc trừ, không còn màn hình riêng để sửa. Lần sau gặp đúng chữ đó thì ô chọn tự chọn
+sẵn và nhân đúng hệ số (Combo 2 cái → 2). Vẫn phải bấm. Gợi ý sai thì lần trừ sau ghi đè,
+không ai phải đi sửa tay. Nó giữ `kind_id` chứ không giữ `product_id`: lô hết hàng rồi bị
+xoá, nhớ một sản phẩm là vài tuần sau trỏ vào chỗ trống.
+
+**Hoàn lại giới hạn 7 ngày, và KHÔNG xoá dòng nào.** Bảng lịch sử lọc 7 ngày cho gọn mắt,
+nhưng dòng cờ giữ vĩnh viễn — xoá đi là nhãn cũ ùa về danh sách chờ mỗi tuần. Một dòng
+vài chục byte, vài trăm đơn một năm. Ngưỡng 7 ngày kiểm **ở server** theo đồng hồ server,
+không để client tự tính: điện thoại lệch một giờ là nó mời hoàn lại rồi server từ chối.
+
+**Vá luôn một lỗ hổng cũ:** `DeleteSaleAsync` và `DeleteSaleGroupAsync` trước đây xoá dòng
+bán mà **không gỡ dấu đã trừ**. Hàng về kho, màn hình trừ tồn vẫn coi như xong, không gì
+báo. `ILabelDeductionRepository.Remove` và `ListByGroupAsync` đã viết sẵn từ `db/019` cho
+đúng việc này nhưng chưa chỗ nào gọi. Nay xoá bất kỳ dòng bán nào thuộc một nhóm do nhãn
+sinh ra sẽ xoá cả nhóm và gỡ dấu — một quyết định không có phiên bản một nửa.
+
 ## Việc còn nợ
 
 - [ ] **Đổi 4 thứ đã lộ trong lịch sử chat** — nên làm sớm:

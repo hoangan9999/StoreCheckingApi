@@ -17,7 +17,7 @@ namespace StoreChecking.Api.Controllers;
 [Produces("application/json")]
 public sealed class InventoryController(
     InventoryService inventory,
-    LabelDeductionService labels) : ControllerBase
+    LabelStockService labels) : ControllerBase
 {
     // ---------- Lô hàng ----------
 
@@ -158,42 +158,44 @@ public sealed class InventoryController(
     public async Task<IActionResult> DeleteDamage(Guid id, CancellationToken ct) =>
         await inventory.DeleteDamageAsync(id, ct) ? NoContent() : NotFound();
 
-    // ---------- Mặt hàng & ghép nhãn ----------
+    // ---------- Trừ tồn theo nhãn ----------
+    //
+    // Không có endpoint nào tự quyết định. Nhãn nào trừ, trừ vào sản phẩm nào, trừ mấy
+    // cái — tất cả đều do người dùng chọn rồi gửi lên. Lý do nằm trong LabelStockService.
 
-    /// <summary>Danh sách mặt hàng kèm tồn còn lại — dùng cho ô chọn khi ghép nhãn.</summary>
-    [HttpGet("kinds")]
-    public async Task<IActionResult> ListKinds(CancellationToken ct) =>
-        Ok(await labels.ListKindsAsync(ct));
-
-    /// <summary>Các bút danh đã ghép: chữ trên nhãn ứng với mặt hàng nào, mỗi món mấy cái.</summary>
+    /// <summary>Gợi ý: chữ trên nhãn này lần trước được trừ vào mặt hàng nào, mỗi món mấy cái.</summary>
+    /// <remarks>Chỉ để chọn sẵn ô dropdown. Không có gì tự trừ theo danh sách này.</remarks>
     [HttpGet("label-aliases")]
     public async Task<IActionResult> ListAliases(CancellationToken ct) =>
         Ok(await labels.ListAliasesAsync(ct));
 
-    /// <summary>Ghép một chữ trên nhãn vào mặt hàng, hoặc đánh dấu bỏ qua (kindId rỗng).</summary>
-    /// <remarks>Ghi đè theo (sourceName, variant) nên sửa một bút danh ghép sai cũng dùng đúng lời gọi này.</remarks>
-    [HttpPut("label-aliases")]
-    public async Task<IActionResult> SaveAlias([FromBody] SaveLabelAliasRequest body, CancellationToken ct) =>
-        Ok(await labels.SaveAliasAsync(body, ct));
-
-    /// <summary>Bỏ một bút danh. Chữ đó sẽ quay lại danh sách "chưa ghép".</summary>
-    [HttpDelete("label-aliases/{id:guid}")]
-    public async Task<IActionResult> DeleteAlias(Guid id, CancellationToken ct) =>
-        await labels.DeleteAliasAsync(id, ct) ? NoContent() : NotFound();
-
-    /// <summary>Mã đơn đã trừ tồn rồi — để client biết nhãn nào khỏi phải hỏi lại.</summary>
-    /// <remarks>Chỉ để đỡ gọi vô ích; chống trừ hai lần là khoá chính trong database, không phải danh sách này.</remarks>
-    [HttpGet("deducted-codes")]
-    public async Task<IActionResult> DeductedCodes(CancellationToken ct) =>
-        Ok(await labels.ListDeductedCodesAsync(ct));
-
-    /// <summary>Trừ tồn cho một đơn, theo danh sách món đọc được trên nhãn.</summary>
+    /// <summary>Nhãn nào đã xử lý, kèm 7 ngày gần nhất để hoàn lại được.</summary>
     /// <remarks>
-    /// Gọi lại cùng một mã đơn là an toàn: lần sau trả về cờ alreadyDone chứ không trừ thêm.
+    /// `codes` là TẤT CẢ mã đã xử lý ở mọi thời điểm — client lấy danh sách nhãn trên NAS
+    /// trừ đi cái này ra danh sách chờ. `recent` mới là phần bị giới hạn 7 ngày.
+    /// </remarks>
+    [HttpGet("label-actions")]
+    public async Task<IActionResult> ListActions(CancellationToken ct) =>
+        Ok(await labels.ListActionsAsync(ct));
+
+    /// <summary>Trừ tồn cho một nhãn, theo đúng sản phẩm người dùng đã chọn.</summary>
+    /// <remarks>
     /// Thiếu tồn thì KHÔNG trừ gì cả và trả 400 — để còn trừ lại được sau khi sửa tồn.
+    /// Nhãn đã xử lý rồi mà gửi lại cũng trả 400: muốn làm lại thì hoàn lại trước.
     /// </remarks>
     [HttpPost("deduct-from-label")]
     public async Task<IActionResult> DeductFromLabel(
         [FromBody] DeductFromLabelRequest body, CancellationToken ct) =>
         Ok(await labels.DeductAsync(body, ct));
+
+    /// <summary>Đánh dấu một nhãn là đã xem và cố ý bỏ qua — hàng không theo dõi tồn.</summary>
+    [HttpPost("label-actions/skip")]
+    public async Task<IActionResult> SkipLabel([FromBody] SkipLabelRequest body, CancellationToken ct) =>
+        Ok(await labels.SkipAsync(body, ct));
+
+    /// <summary>Hoàn lại một quyết định: nhãn quay về danh sách chờ, dòng bán đã sinh ra thì xoá.</summary>
+    /// <remarks>Chỉ trong 7 ngày. Quá hạn trả 400 chứ không âm thầm sửa sổ của tháng đã chốt.</remarks>
+    [HttpDelete("label-actions/{orderCode}")]
+    public async Task<IActionResult> UndoAction(string orderCode, CancellationToken ct) =>
+        await labels.UndoAsync(orderCode, ct) ? NoContent() : NotFound();
 }
