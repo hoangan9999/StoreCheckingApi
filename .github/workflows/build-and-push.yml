@@ -59,6 +59,43 @@ jobs:
             --logger "console;verbosity=normal" \
             --logger "trx;LogFileName=results.trx" --results-directory ./trx
 
+      # Đỏ thì in thẳng tên test và câu assert ra Job Summary.
+      #
+      # Lý do có bước này: log của Actions chỉ đọc được khi đã đăng nhập GitHub, còn
+      # Job Summary thì nằm trong `output.summary` của check-run và lấy được bằng một
+      # lời gọi api.github.com không cần token. Thiếu nó thì một lần CI đỏ là phải mở
+      # trình duyệt đăng nhập, hoặc tệ hơn là đoán — đã đoán trượt hai vòng vì chuyện này.
+      - name: Test đỏ thì tóm tắt ra Job Summary
+        if: failure()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, xml.etree.ElementTree as ET
+
+          NS = '{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}'
+          shown = 0
+
+          for path in sorted(glob.glob('trx/*.trx')):
+              for r in ET.parse(path).getroot().iter(NS + 'UnitTestResult'):
+                  if r.get('outcome') != 'Failed':
+                      continue
+                  shown += 1
+                  # Mười cái đầu là đủ: quá số đó thì gần như chắc chắn cùng một nguyên nhân.
+                  if shown > 10:
+                      continue
+                  msg = r.find(f'.//{NS}Message')
+                  trace = r.find(f'.//{NS}StackTrace')
+                  print(f"### {r.get('testName')}")
+                  print('```')
+                  print((msg.text or '').strip()[:1200])
+                  # Một dòng stack là đủ để biết assert nào — nhiều hơn chỉ là nhiễu.
+                  first = next((l for l in (trace.text or '').splitlines() if l.strip()), '') if trace is not None else ''
+                  if first:
+                      print(first.strip()[:200])
+                  print('```')
+
+          print(f"\n**{shown} test đỏ.**" + (' Chỉ in 10 cái đầu.' if shown > 10 else ''))
+          PY
+
       # A skipped suite must never pass for a green build. These tests skip themselves
       # when no database answers — right on the development machine, badly wrong here,
       # where it would wave an untested commit straight through to the NAS.
