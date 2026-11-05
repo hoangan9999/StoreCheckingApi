@@ -23,6 +23,7 @@ namespace StoreChecking.Application.Inventory;
 /// </summary>
 public sealed class LabelStockService(
     ICurrentUser user,
+    IProductKindRepository kinds,
     ILabelItemAliasRepository aliases,
     ILabelStockActionRepository actions,
     IProductRepository products,
@@ -69,7 +70,7 @@ public sealed class LabelStockService(
     }
 
     /// <summary>
-    /// Take one label's stock off, from the products a person picked.
+    /// Take one label's stock off, from the kinds a person picked.
     /// <para>All or nothing. If any product is short, nothing moves and nothing is marked:
     /// short stock means the figures were already wrong, and taking off what happens to be
     /// there while recording the label as done would hide that and leave no way to retry
@@ -86,73 +87,86 @@ public sealed class LabelStockService(
 
         await RefuseIfDecided(code, ct);
 
-        // Resolve every product first, so a typo'd id fails before anything is written.
-        var picked = new Dictionary<Guid, Product>();
+        // Resolve every kind first, so a bad id fails before anything is written.
+        var kindNames = (await kinds.ListAsync(ct)).ToDictionary(k => k.Id, k => k.Name);
         foreach (var line in lines)
         {
             if (line.Quantity < 1) throw new ValidationException("Số cái phải lớn hơn 0.");
-            if (picked.ContainsKey(line.ProductId)) continue;
-
-            picked[line.ProductId] = await products.FindAsync(line.ProductId, ct)
-                ?? throw new ValidationException("Sản phẩm không tồn tại hoặc không thuộc về bạn.");
+            if (!kindNames.ContainsKey(line.KindId))
+                throw new ValidationException("Mặt hàng không tồn tại hoặc không thuộc về bạn.");
         }
 
-        // Two lines of a label can land on the same product — a combo listed twice, or two
-        // variations the person maps to one thing. Summed before checking stock, or each
+        // Two lines of a label can land on the same kind — a combo listed twice, or two
+        // variations the person maps to one thing. Summed before drawing stock, or each
         // half passes on its own and together they oversell.
         var wanted = lines
-            .GroupBy(l => l.ProductId)
+            .GroupBy(l => l.KindId)
             .ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity));
 
-        var batchNames = (await batches.ListAsync(ct)).ToDictionary(b => b.Id, b => b.Name);
-        var short_ = new List<string>();
-
-        foreach (var (productId, need) in wanted)
-        {
-            var available = await sales.AvailableAsync(productId, ct: ct);
-            if (available < need)
-                short_.Add($"'{picked[productId].Name}': cần {need}, còn {Math.Max(available, 0)}");
-        }
-
-        if (short_.Count > 0)
-            throw new ValidationException("Không đủ tồn kho — " + string.Join("; ", short_) + ".");
+        var order = (await batches.ListAsync(ct))
+            .ToDictionary(b => b.Id, b => (Rank: b.Priority ?? int.MaxValue, b.ImportDate, b.Name));
 
         // One group for the whole label, even when it is a single line, so the order's
         // rows can be found again and undone together.
         var groupId = Guid.NewGuid();
         var rows = new List<Sale>();
         var taken = new List<DeductedProduct>();
+        var short_ = new List<string>();
         var total = 0;
-        var first = true;
 
-        foreach (var (productId, qty) in wanted)
+        foreach (var (kindId, need) in wanted)
         {
-            var p = picked[productId];
-            rows.Add(new Sale
-            {
-                UserId = user.Id,
-                ProductId = p.Id,
-                BatchId = p.BatchId,
-                Quantity = qty,
-                // The price set on the batch. A label never prints one.
-                SellPrice = p.SellPrice,
-                ShippingFee = 0m,
-                // Shipping and the note belong to the order, so the note rides on the
-                // first row only, exactly as the manual selling path does it.
-                Note = first ? "Trừ tồn từ nhãn " + code : null,
-                SoldAt = DateTimeOffset.UtcNow,
-                SaleGroupId = groupId,
-            });
+            var left = need;
 
-            taken.Add(new DeductedProduct(
-                p.Id, p.Name, batchNames.GetValueOrDefault(p.BatchId, "?"), qty));
-            total += qty;
-            first = false;
+            // Which batch to draw from: the priority the user set, then the oldest stock.
+            // Batches with no priority go LAST — unset means "not decided", and treating
+            // that as most urgent would quietly override the order they did set.
+            foreach (var p in (await products.ListByKindAsync(kindId, ct))
+                     .OrderBy(p => order.GetValueOrDefault(p.BatchId).Rank)
+                     .ThenBy(p => order.GetValueOrDefault(p.BatchId).ImportDate)
+                     .ThenBy(p => p.CreatedAt))
+            {
+                if (left == 0) break;
+
+                var available = await sales.AvailableAsync(p.Id, ct: ct);
+                if (available <= 0) continue;
+
+                var take = (int)Math.Min(left, available);
+                rows.Add(new Sale
+                {
+                    UserId = user.Id,
+                    ProductId = p.Id,
+                    BatchId = p.BatchId,
+                    Quantity = take,
+                    // The price set on the batch. A label never prints one.
+                    SellPrice = p.SellPrice,
+                    ShippingFee = 0m,
+                    SoldAt = DateTimeOffset.UtcNow,
+                    SaleGroupId = groupId,
+                });
+
+                taken.Add(new DeductedProduct(
+                    p.Id, p.Name, order.GetValueOrDefault(p.BatchId).Name ?? "?", take));
+                total += take;
+                left -= take;
+            }
+
+            if (left > 0) short_.Add($"'{kindNames[kindId]}': cần {need}, còn {need - left}");
         }
 
-        sales.AddRange(rows);
-        await RememberAsync(lines, picked, ct);
+        // Nothing has been handed to EF yet, so throwing here really does leave the books
+        // untouched. Short stock means the figures were already wrong; taking off what
+        // happens to be there while recording the label as done would hide that and leave
+        // no way to retry once it is corrected.
+        if (short_.Count > 0)
+            throw new ValidationException("Không đủ tồn kho — " + string.Join("; ", short_) + ".");
 
+        // Shipping and the note belong to the order, so the note rides on the first row
+        // only, exactly as the manual selling path does it.
+        if (rows.Count > 0) rows[0].Note = "Trừ tồn từ nhãn " + code;
+
+        sales.AddRange(rows);
+        await RememberAsync(lines, ct);
         actions.Add(new LabelStockAction
         {
             UserId = user.Id,
@@ -253,7 +267,7 @@ public sealed class LabelStockService(
     /// as something else overwrites it here.</para>
     /// </summary>
     private async Task RememberAsync(
-        IReadOnlyList<DeductLine> lines, Dictionary<Guid, Product> picked, CancellationToken ct)
+        IReadOnlyList<DeductLine> lines, CancellationToken ct)
     {
         // Grouped by wording, because one printed line can be split across several
         // products — a line of five that was really three Basic and two Premium. There is
@@ -267,7 +281,7 @@ public sealed class LabelStockService(
             if (group.Count() > 1) continue;
 
             var line = group.First();
-            if (picked[line.ProductId].KindId is not Guid kindId) continue;
+            var kindId = line.KindId;
 
             // "Protect Basic (Combo 2 cái)" prints a quantity of 1 and costs 2 units, so
             // the multiplier is what makes the next one pre-fill correctly. Anything that

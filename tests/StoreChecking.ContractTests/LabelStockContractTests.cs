@@ -19,45 +19,56 @@ public sealed class LabelStockContractTests(ApiFactory api)
     private const string Protect = "Protect Bảo Vệ Card Hotwheels (không có xe )";
     private const string Combo2 = "Protect Basic (Combo 2 cái )";
 
-    /// <summary>Một lô một sản phẩm. Trả id sản phẩm — nay chọn thẳng sản phẩm, không qua mặt hàng.</summary>
+    /// <summary>Một lô một mặt hàng. Trả id MẶT HÀNG — nay chọn mặt hàng, lô do server rút.</summary>
     private static async Task<Guid> NewProduct(
         HttpClient c, string product = "Basic", int quantity = 100,
-        decimal price = 11000m, string batch = "Lô A", string importDate = "2026-08-01")
+        decimal price = 11000m, string batch = "Lô A", string importDate = "2026-08-01",
+        int? priority = null)
     {
-        await c.PostJson("/api/inventory/batches", new
+        var created = await Json.Read(await c.PostJson("/api/inventory/batches", new
         {
             name = batch,
             importDate,
             totalCost = 500m,
             note = (string?)null,
             products = new[] { new { name = product, quantity, sellPrice = price } },
-        });
+        }));
+
+        if (priority is int p)
+        {
+            await c.PutJson("/api/inventory/batches/priorities", new
+            {
+                items = new[] { new { id = created.GetProperty("id").GetGuid(), priority = p } },
+            });
+        }
 
         var stock = await Json.Read(await c.GetAsync("/api/inventory/stock"));
         return stock.EnumerateArray()
             .First(x => x.GetProperty("name").GetString() == product
                      && x.GetProperty("batchName").GetString() == batch)
-            .GetProperty("id").GetGuid();
+            .GetProperty("kindId").GetGuid();
     }
 
     private static Task<HttpResponseMessage> Deduct(
-        HttpClient c, string code, Guid productId, int quantity,
+        HttpClient c, string code, Guid kindId, int quantity,
         string name = Protect, string variant = "", int labelQty = 1) =>
         c.PostJson("/api/inventory/deduct-from-label", new
         {
             orderCode = code,
-            lines = new[] { new { sourceName = name, variant, labelQty, productId, quantity } },
+            lines = new[] { new { sourceName = name, variant, labelQty, kindId, quantity } },
         });
 
     private static Task<HttpResponseMessage> Skip(HttpClient c, params string[] codes) =>
         c.PostJson("/api/inventory/label-actions/skip", new { orderCodes = codes });
 
-    private static async Task<long> Remaining(HttpClient c, Guid productId)
+    /// <summary>Tồn còn lại của một mặt hàng, cộng hết các lô — vì nay trừ có thể rút qua nhiều lô.</summary>
+    private static async Task<long> Remaining(HttpClient c, Guid kindId)
     {
         var stock = await Json.Read(await c.GetAsync("/api/inventory/stock"));
         return stock.EnumerateArray()
-            .First(x => x.GetProperty("id").GetGuid() == productId)
-            .GetProperty("remaining").GetInt64();
+            .Where(x => x.GetProperty("kindId").ValueKind == JsonValueKind.String
+                     && x.GetProperty("kindId").GetGuid() == kindId)
+            .Sum(x => x.GetProperty("remaining").GetInt64());
     }
 
     // ---------- Trừ tồn ----------
@@ -87,14 +98,14 @@ public sealed class LabelStockContractTests(ApiFactory api)
     // Cái tên sai ở bản trước: nó tự đoán nhãn nói tới mặt hàng nào. Nay máy không chọn
     // gì cả — gửi id sản phẩm không có thật thì phải trả 400 chứ không âm thầm bỏ qua.
     [DbFact]
-    public async Task San_pham_khong_ton_tai_thi_400()
+    public async Task Mat_hang_khong_ton_tai_thi_400()
     {
         var c = NewUser();
         await NewProduct(c);
 
         var res = await Deduct(c, "SPXVN002", Guid.NewGuid(), 1);
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
-        Assert.Equal("Sản phẩm không tồn tại hoặc không thuộc về bạn.",
+        Assert.Equal("Mặt hàng không tồn tại hoặc không thuộc về bạn.",
             (await Json.Read(res)).GetProperty("error").GetString());
     }
 
@@ -140,8 +151,8 @@ public sealed class LabelStockContractTests(ApiFactory api)
             orderCode = "SPXVN005",
             lines = new[]
             {
-                new { sourceName = Protect, variant = "", labelQty = 1, productId = product, quantity = 3 },
-                new { sourceName = Combo2,  variant = "", labelQty = 1, productId = product, quantity = 3 },
+                new { sourceName = Protect, variant = "", labelQty = 1, kindId = product, quantity = 3 },
+                new { sourceName = Combo2,  variant = "", labelQty = 1, kindId = product, quantity = 3 },
             },
         });
 
@@ -407,7 +418,7 @@ public sealed class LabelStockContractTests(ApiFactory api)
     }
 
     [DbFact]
-    public async Task Khong_tru_duoc_vao_san_pham_cua_nguoi_khac()
+    public async Task Khong_tru_duoc_vao_mat_hang_cua_nguoi_khac()
     {
         var a = NewUser();
         var b = NewUser();
@@ -435,8 +446,8 @@ public sealed class LabelStockContractTests(ApiFactory api)
             orderCode = "SPXVN020",
             lines = new[]
             {
-                new { sourceName = Protect, variant = "", labelQty = 5, productId = basic, quantity = 3 },
-                new { sourceName = Protect, variant = "", labelQty = 5, productId = premium, quantity = 2 },
+                new { sourceName = Protect, variant = "", labelQty = 5, kindId = basic, quantity = 3 },
+                new { sourceName = Protect, variant = "", labelQty = 5, kindId = premium, quantity = 2 },
             },
         });
 
@@ -464,8 +475,8 @@ public sealed class LabelStockContractTests(ApiFactory api)
             orderCode = "SPXVN021",
             lines = new[]
             {
-                new { sourceName = Protect, variant = "", labelQty = 5, productId = basic, quantity = 3 },
-                new { sourceName = Protect, variant = "", labelQty = 5, productId = premium, quantity = 2 },
+                new { sourceName = Protect, variant = "", labelQty = 5, kindId = basic, quantity = 3 },
+                new { sourceName = Protect, variant = "", labelQty = 5, kindId = premium, quantity = 2 },
             },
         });
 
@@ -486,9 +497,9 @@ public sealed class LabelStockContractTests(ApiFactory api)
             orderCode = "SPXVN022",
             lines = new[]
             {
-                new { sourceName = Protect, variant = "", labelQty = 5, productId = basic, quantity = 3 },
-                new { sourceName = Protect, variant = "", labelQty = 5, productId = premium, quantity = 2 },
-                new { sourceName = Combo2, variant = "", labelQty = 1, productId = basic, quantity = 2 },
+                new { sourceName = Protect, variant = "", labelQty = 5, kindId = basic, quantity = 3 },
+                new { sourceName = Protect, variant = "", labelQty = 5, kindId = premium, quantity = 2 },
+                new { sourceName = Combo2, variant = "", labelQty = 1, kindId = basic, quantity = 2 },
             },
         });
 
@@ -496,5 +507,53 @@ public sealed class LabelStockContractTests(ApiFactory api)
         Assert.Equal(1, aliases.GetArrayLength());
         Assert.Equal("protect basic (combo 2 cái )", aliases[0].GetProperty("sourceName").GetString());
         Assert.Equal(2, aliases[0].GetProperty("units").GetInt32());
+    }
+
+    // ---------- Rút qua nhiều lô ----------
+
+    // Người dùng chọn MẶT HÀNG, không chọn lô. Cùng một mặt hàng nằm ở ba lô cùng lúc nên
+    // một ô chọn đầy dòng trùng tên là vô nghĩa — còn thứ tự rút thì họ đã đặt sẵn một lần
+    // rồi, bằng ưu tiên lô.
+    [DbFact]
+    public async Task Rut_lo_uu_tien_truoc_roi_tran_sang_lo_sau()
+    {
+        var c = NewUser();
+        await NewProduct(c, quantity: 3, batch: "Lô sau", importDate: "2026-08-01", priority: 5);
+        var kind = await NewProduct(c, quantity: 4, batch: "Lô trước", importDate: "2026-08-02", priority: 1);
+
+        // Cùng một mặt hàng ở hai lô: tên trùng nên gộp làm một.
+        Assert.Equal(7, await Remaining(c, kind));
+
+        var body = await Json.Read(await Deduct(c, "SPXVN030", kind, 6));
+        Assert.Equal(6, body.GetProperty("unitsTotal").GetInt32());
+
+        // Vét lô ưu tiên 1 trước (4 cái), còn thiếu 2 thì lấy nốt ở lô ưu tiên 5.
+        var lines = body.GetProperty("products").EnumerateArray().ToList();
+        Assert.Equal(2, lines.Count);
+        Assert.Equal("Lô trước", lines[0].GetProperty("batchName").GetString());
+        Assert.Equal(4, lines[0].GetProperty("quantity").GetInt32());
+        Assert.Equal("Lô sau", lines[1].GetProperty("batchName").GetString());
+        Assert.Equal(2, lines[1].GetProperty("quantity").GetInt32());
+
+        Assert.Equal(1, await Remaining(c, kind));
+    }
+
+    // Thiếu tồn tính trên TỔNG của mặt hàng, không phải trên từng lô — nếu không thì một
+    // mặt hàng còn thừa hàng vẫn bị báo hết chỉ vì lô đầu tiên cạn.
+    [DbFact]
+    public async Task Thieu_ton_tinh_tren_tong_moi_lo_cong_lai()
+    {
+        var c = NewUser();
+        await NewProduct(c, quantity: 2, batch: "Lô A", importDate: "2026-08-01", priority: 1);
+        var kind = await NewProduct(c, quantity: 2, batch: "Lô B", importDate: "2026-08-02", priority: 2);
+
+        // 4 cái rải hai lô: lấy được.
+        Assert.Equal(HttpStatusCode.OK, (await Deduct(c, "SPXVN031", kind, 4)).StatusCode);
+        Assert.Equal(0, await Remaining(c, kind));
+
+        // Còn 5 thì hết thật, và không trừ gì cả.
+        var res = await Deduct(c, "SPXVN032", kind, 5);
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Contains("cần 5, còn 0", (await Json.Read(res)).GetProperty("error").GetString());
     }
 }

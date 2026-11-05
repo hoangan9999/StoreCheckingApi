@@ -68,10 +68,16 @@ public record LabelActionsDto(IReadOnlyList<string> Codes, IReadOnlyList<LabelAc
 /// one label item that turned out to be two units of stock is a combo, and next time the
 /// same wording should pre-fill as two again.
 /// </param>
-/// <param name="ProductId">The product row the person picked, in a specific batch.</param>
+/// <param name="KindId">
+/// The KIND the person picked — "Basic", not "the Basic row of batch 3".
+/// <para>Which batch it comes out of is not theirs to decide: the same kind sits in
+/// three batches at once, so a dropdown of product rows is three identical lines with
+/// nothing to tell them apart. The person knows what went in the parcel; the batch order
+/// is a rule they already set once, as batch priority.</para>
+/// </param>
 /// <param name="Quantity">Units of stock to take off. What they confirmed, not a guess.</param>
 public record DeductLine(
-    string? SourceName, string? Variant, int LabelQty, Guid ProductId, int Quantity);
+    string? SourceName, string? Variant, int LabelQty, Guid KindId, int Quantity);
 
 /// <summary>Take one label's stock off, from choices a person made.</summary>
 public record DeductFromLabelRequest(string OrderCode, IReadOnlyList<DeductLine>? Lines);
