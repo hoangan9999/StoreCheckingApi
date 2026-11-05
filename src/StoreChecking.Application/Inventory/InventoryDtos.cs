@@ -84,6 +84,23 @@ public record RecordSaleRequest(
 public record UpdateSaleRequest(
     int Quantity, decimal SellPrice, DateTimeOffset SoldAt, decimal ShippingFee, string? Note);
 
+/// <summary>One line of an order, as it should read after the edit.</summary>
+public record UpdateSaleGroupLine(Guid Id, int Quantity, decimal SellPrice);
+
+/// <summary>
+/// Edit a whole order at once — every line of it, plus the shipping, date and note that
+/// belong to the order rather than to any one line.
+/// </summary>
+/// <param name="Lines">
+/// Every line the order should END with. A line of the order left out of this list is
+/// DELETED, which is how a two-item order becomes a one-item order after the packer finds
+/// they shipped one thing, not two. Sending an empty list is refused: an order with no
+/// lines is a deleted order, and deleting has its own call that says so.
+/// </param>
+public record UpdateSaleGroupRequest(
+    DateTimeOffset SoldAt, decimal ShippingFee, string? Note,
+    IReadOnlyList<UpdateSaleGroupLine>? Lines);
+
 // ---------- Damages ----------
 
 /// <summary>Stock written off as damaged.</summary>

@@ -612,4 +612,203 @@ public sealed class InventoryContractTests(ApiFactory api)
             Assert.True((await anon.GetAsync(url)).StatusCode == HttpStatusCode.Unauthorized,
                 $"{url} phải trả 401 khi không có token.");
     }
+
+    // ---------- Sửa cả một đơn ----------
+    //
+    // Sửa từng dòng một thì một đơn nhiều dòng phải gọi nhiều lượt, và nửa chừng hỏng là
+    // sổ sách kẹt ở trạng thái lửng. Ở đây một lượt: đơn thành đúng như mô tả, hoặc không
+    // đổi gì cả.
+
+    /// <summary>Một đơn hai dòng, trả về (groupId, id dòng 1, id dòng 2).</summary>
+    private static async Task<(Guid Group, Guid L1, Guid L2)> TwoLineOrder(
+        HttpClient c, Guid p1, Guid p2, int q1 = 2, int q2 = 3)
+    {
+        var rows = await Json.Read(await c.PostJson("/api/inventory/sales", new
+        {
+            items = new[]
+            {
+                new { productId = p1, quantity = q1, sellPrice = 100m },
+                new { productId = p2, quantity = q2, sellPrice = 100m },
+            },
+            soldAt = SoldAt, shippingFee = 20m, note = "đơn gốc",
+        }));
+
+        return (rows[0].GetProperty("saleGroupId").GetGuid(),
+                rows[0].GetProperty("id").GetGuid(),
+                rows[1].GetProperty("id").GetGuid());
+    }
+
+    [DbFact]
+    public async Task Sua_ca_don_doi_gia_va_so_luong_mot_luot()
+    {
+        var c = NewUser();
+        var (_, p1) = await NewBatch(c, name: "Lô 1", quantity: 10);
+        var (_, p2) = await NewBatch(c, name: "Lô 2", quantity: 10);
+        var (group, l1, l2) = await TwoLineOrder(c, p1, p2);
+
+        var res = await c.PutJson($"/api/inventory/sales/group/{group}", new
+        {
+            soldAt = SoldAt,
+            shippingFee = 35m,
+            note = "sửa lại",
+            lines = new[]
+            {
+                new { id = l1, quantity = 1, sellPrice = 250m },
+                new { id = l2, quantity = 3, sellPrice = 90m },
+            },
+        });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        var body = await Json.Read(res);
+        Assert.Equal(2, body.GetArrayLength());
+        Assert.Equal(250m, body[0].GetProperty("sellPrice").GetDecimal());
+        Assert.Equal(1, body[0].GetProperty("quantity").GetInt32());
+
+        // Phí ship và ghi chú thuộc về ĐƠN, nên nằm ở dòng đầu và chỉ ở đó — để đơn hai
+        // dòng không đọc thành trả phí ship hai lần.
+        Assert.Equal(35m, body[0].GetProperty("shippingFee").GetDecimal());
+        Assert.Equal("sửa lại", body[0].GetProperty("note").GetString());
+        Assert.Equal(0m, body[1].GetProperty("shippingFee").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, body[1].GetProperty("note").ValueKind);
+
+        // Giảm từ 2 xuống 1 thì tồn phải trả lại.
+        var stock = await Json.Read(await c.GetAsync("/api/inventory/stock"));
+        Assert.Equal(9, stock.EnumerateArray()
+            .First(x => x.GetProperty("id").GetGuid() == p1).GetProperty("remaining").GetInt64());
+    }
+
+    // Bỏ một dòng khỏi danh sách là xoá dòng đó — cách một đơn hai món thành đơn một món.
+    [DbFact]
+    public async Task Bo_mot_dong_khoi_danh_sach_thi_dong_do_bi_xoa()
+    {
+        var c = NewUser();
+        var (_, p1) = await NewBatch(c, name: "Lô 1", quantity: 10);
+        var (_, p2) = await NewBatch(c, name: "Lô 2", quantity: 10);
+        var (group, l1, _) = await TwoLineOrder(c, p1, p2);
+
+        var body = await Json.Read(await c.PutJson($"/api/inventory/sales/group/{group}", new
+        {
+            soldAt = SoldAt, shippingFee = 0m, note = (string?)null,
+            lines = new[] { new { id = l1, quantity = 2, sellPrice = 100m } },
+        }));
+
+        Assert.Equal(1, body.GetArrayLength());
+
+        // Dòng kia đi hẳn, và tồn của nó về lại kho.
+        var stock = await Json.Read(await c.GetAsync("/api/inventory/stock"));
+        Assert.Equal(10, stock.EnumerateArray()
+            .First(x => x.GetProperty("id").GetGuid() == p2).GetProperty("remaining").GetInt64());
+    }
+
+    [DbFact]
+    public async Task Gui_danh_sach_rong_thi_400_chu_khong_xoa_don()
+    {
+        var c = NewUser();
+        var (_, p1) = await NewBatch(c, name: "Lô 1", quantity: 10);
+        var (_, p2) = await NewBatch(c, name: "Lô 2", quantity: 10);
+        var (group, _, _) = await TwoLineOrder(c, p1, p2);
+
+        var res = await c.PutJson($"/api/inventory/sales/group/{group}", new
+        {
+            soldAt = SoldAt, shippingFee = 0m, note = (string?)null,
+            lines = Array.Empty<object>(),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Contains("ít nhất một dòng", (await Json.Read(res)).GetProperty("error").GetString());
+        Assert.Equal(1, (await Json.Items(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
+    }
+
+    // Tồn phải tính lại có CỘNG LẠI phần đơn này đang giữ, không thì nâng 2 lên 3 bị đo
+    // trên số tồn vẫn đang coi 2 cái đó là đã đi.
+    [DbFact]
+    public async Task Nang_so_luong_duoc_tinh_tren_ton_da_cong_lai_phan_don_dang_giu()
+    {
+        var c = NewUser();
+        var (_, p1) = await NewBatch(c, name: "Lô 1", quantity: 5);
+        var (_, p2) = await NewBatch(c, name: "Lô 2", quantity: 10);
+        var (group, l1, l2) = await TwoLineOrder(c, p1, p2, q1: 4);
+
+        // Còn 1 trên kệ, nhưng đơn đang giữ 4 nên nâng lên 5 là vừa đủ.
+        var ok = await c.PutJson($"/api/inventory/sales/group/{group}", new
+        {
+            soldAt = SoldAt, shippingFee = 0m, note = (string?)null,
+            lines = new[]
+            {
+                new { id = l1, quantity = 5, sellPrice = 100m },
+                new { id = l2, quantity = 3, sellPrice = 100m },
+            },
+        });
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+
+        // 6 thì vượt thật, và KHÔNG đổi gì cả.
+        var res = await c.PutJson($"/api/inventory/sales/group/{group}", new
+        {
+            soldAt = SoldAt, shippingFee = 0m, note = (string?)null,
+            lines = new[]
+            {
+                new { id = l1, quantity = 6, sellPrice = 100m },
+                new { id = l2, quantity = 3, sellPrice = 100m },
+            },
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Contains("cần 6, còn 5", (await Json.Read(res)).GetProperty("error").GetString());
+
+        var stock = await Json.Read(await c.GetAsync("/api/inventory/stock"));
+        Assert.Equal(0, stock.EnumerateArray()
+            .First(x => x.GetProperty("id").GetGuid() == p1).GetProperty("remaining").GetInt64());
+    }
+
+    [DbFact]
+    public async Task Dong_khong_thuoc_don_thi_400()
+    {
+        var c = NewUser();
+        var (_, p1) = await NewBatch(c, name: "Lô 1", quantity: 10);
+        var (_, p2) = await NewBatch(c, name: "Lô 2", quantity: 10);
+        var (group, l1, _) = await TwoLineOrder(c, p1, p2);
+
+        var res = await c.PutJson($"/api/inventory/sales/group/{group}", new
+        {
+            soldAt = SoldAt, shippingFee = 0m, note = (string?)null,
+            lines = new[]
+            {
+                new { id = l1, quantity = 1, sellPrice = 100m },
+                new { id = Guid.NewGuid(), quantity = 1, sellPrice = 100m },
+            },
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Equal("Dòng bán không thuộc đơn này.",
+            (await Json.Read(res)).GetProperty("error").GetString());
+    }
+
+    [DbFact]
+    public async Task Sua_don_khong_ton_tai_thi_404()
+    {
+        var res = await NewUser().PutJson($"/api/inventory/sales/group/{Guid.NewGuid()}", new
+        {
+            soldAt = SoldAt, shippingFee = 0m, note = (string?)null,
+            lines = new[] { new { id = Guid.NewGuid(), quantity = 1, sellPrice = 100m } },
+        });
+
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
+    [DbFact]
+    public async Task Nguoi_khac_khong_sua_duoc_don_cua_minh()
+    {
+        var a = NewUser();
+        var b = NewUser();
+        var (_, p1) = await NewBatch(a, name: "Lô 1", quantity: 10);
+        var (_, p2) = await NewBatch(a, name: "Lô 2", quantity: 10);
+        var (group, l1, _) = await TwoLineOrder(a, p1, p2);
+
+        var res = await b.PutJson($"/api/inventory/sales/group/{group}", new
+        {
+            soldAt = SoldAt, shippingFee = 0m, note = (string?)null,
+            lines = new[] { new { id = l1, quantity = 1, sellPrice = 1m } },
+        });
+
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
 }

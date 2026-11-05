@@ -410,6 +410,15 @@ public sealed class InventoryService(
         if (body.Quantity > available)
             throw new ValidationException($"Không đủ tồn kho: còn {available}, yêu cầu bán {body.Quantity}.");
 
+        // The label's record of "deducted N" has to follow the rows it describes. Read
+        // the siblings BEFORE touching this one, so the sum is over the real new figures
+        // rather than over a change tracker halfway through being edited.
+        if (row.SaleGroupId is Guid g)
+        {
+            var siblings = await sales.ListByGroupAsync(g, ct);
+            await SyncLabelTotalAsync(g, siblings.Sum(x => x.Id == row.Id ? body.Quantity : x.Quantity), ct);
+        }
+
         row.Quantity = body.Quantity;
         row.SellPrice = body.SellPrice;
         row.ShippingFee = body.ShippingFee;
@@ -418,6 +427,96 @@ public sealed class InventoryService(
 
         await uow.SaveChangesAsync(ct);
         return ToDto(row);
+    }
+
+    /// <summary>
+    /// Edit a whole order: every line, plus the shipping, date and note that belong to
+    /// the order rather than to a line.
+    /// <para>Exists next to <see cref="UpdateSaleAsync"/> because an order written by a
+    /// label deduction is several rows at once, and fixing it one row at a time is
+    /// several round trips that can half-succeed. Here it is one transaction: the order
+    /// ends up as described, or it does not change at all.</para>
+    /// </summary>
+    /// <returns><c>null</c> when the current user has no order with that group id.</returns>
+    public async Task<IReadOnlyList<SaleDto>?> UpdateSaleGroupAsync(
+        Guid groupId, UpdateSaleGroupRequest body, CancellationToken ct = default)
+    {
+        var rows = await sales.ListByGroupAsync(groupId, ct);
+        if (rows.Count == 0) return null;
+
+        var want = body.Lines ?? [];
+        if (want.Count == 0)
+            throw new ValidationException("Đơn phải còn ít nhất một dòng. Muốn bỏ hẳn thì xoá đơn.");
+        if (body.ShippingFee < 0) throw new ValidationException("Phí ship không được âm.");
+
+        var byId = rows.ToDictionary(r => r.Id);
+        if (want.Select(l => l.Id).Distinct().Count() != want.Count)
+            throw new ValidationException("Một dòng bán được gửi lên hai lần.");
+
+        foreach (var l in want)
+        {
+            if (!byId.ContainsKey(l.Id)) throw new ValidationException("Dòng bán không thuộc đơn này.");
+            if (l.Quantity < 1) throw new ValidationException("Số lượng bán phải lớn hơn 0.");
+            if (l.SellPrice < 0) throw new ValidationException("Giá bán không được âm.");
+        }
+
+        // Stock, per product, counting this order's own rows as free again.
+        //
+        // Not one check per line: two lines of the same order can draw on the same
+        // product, and checking them separately lets each pass on its own while together
+        // they oversell. And the capacity has to add back what this order already holds,
+        // or raising a line from 3 to 4 is measured against stock that still counts the
+        // 3 as gone.
+        var held = rows.GroupBy(r => r.ProductId).ToDictionary(g => g.Key, g => (long)g.Sum(r => r.Quantity));
+        var need = want.GroupBy(l => byId[l.Id].ProductId).ToDictionary(g => g.Key, g => (long)g.Sum(l => l.Quantity));
+
+        var short_ = new List<string>();
+        foreach (var (productId, wantQty) in need)
+        {
+            var capacity = await sales.AvailableAsync(productId, ct: ct) + held.GetValueOrDefault(productId);
+            if (wantQty > capacity)
+            {
+                var name = (await products.FindAsync(productId, ct))?.Name ?? "?";
+                short_.Add($"'{name}': cần {wantQty}, còn {Math.Max(capacity, 0)}");
+            }
+        }
+
+        if (short_.Count > 0)
+            throw new ValidationException("Không đủ tồn kho — " + string.Join("; ", short_) + ".");
+
+        var keep = want.ToDictionary(l => l.Id);
+        var dropped = rows.Where(r => !keep.ContainsKey(r.Id)).ToList();
+        if (dropped.Count > 0) sales.RemoveRange(dropped);
+
+        // Shipping and the note ride on the FIRST remaining line only, exactly as the
+        // selling and deduction paths write them. Left on every line, a two-line order
+        // would read as having paid postage twice.
+        var first = true;
+        foreach (var l in want)
+        {
+            var row = byId[l.Id];
+            row.Quantity = l.Quantity;
+            row.SellPrice = l.SellPrice;
+            row.SoldAt = body.SoldAt;
+            row.ShippingFee = first ? body.ShippingFee : 0m;
+            row.Note = first ? Clean(body.Note) : null;
+            first = false;
+        }
+
+        await SyncLabelTotalAsync(groupId, want.Sum(l => l.Quantity), ct);
+        await uow.SaveChangesAsync(ct);
+
+        return want.Select(l => ToDto(byId[l.Id])).ToList();
+    }
+
+    /// <summary>
+    /// Keep a label's "deducted N units" in step with the rows it describes.
+    /// <para>Silent drift otherwise: the record says 5 while its lines add up to 3, and
+    /// nothing in the app ever compares the two.</para>
+    /// </summary>
+    private async Task SyncLabelTotalAsync(Guid groupId, int units, CancellationToken ct)
+    {
+        foreach (var a in await labelActions.ListByGroupAsync(groupId, ct)) a.UnitsTotal = units;
     }
 
     /// <returns><c>false</c> when no such sale belongs to the current user.</returns>

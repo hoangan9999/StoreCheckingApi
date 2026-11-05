@@ -132,6 +132,17 @@ public sealed class InventoryController(
     public async Task<IActionResult> DeleteSale(Guid id, CancellationToken ct) =>
         await inventory.DeleteSaleAsync(id, ct) ? NoContent() : NotFound();
 
+    /// <summary>Sửa cả một đơn: mọi dòng, kèm ngày, phí ship và ghi chú của đơn.</summary>
+    /// <remarks>
+    /// Dòng nào của đơn KHÔNG có trong `lines` sẽ bị xoá — đó là cách một đơn hai món
+    /// thành đơn một món. Gửi danh sách rỗng thì trả 400: đơn không còn dòng nào là đơn
+    /// đã xoá, mà xoá thì đã có lời gọi riêng nói đúng việc đó.
+    /// </remarks>
+    [HttpPut("sales/group/{groupId:guid}")]
+    public async Task<IActionResult> UpdateSaleGroup(
+        Guid groupId, [FromBody] UpdateSaleGroupRequest body, CancellationToken ct) =>
+        await inventory.UpdateSaleGroupAsync(groupId, body, ct) is { } rows ? Ok(rows) : NotFound();
+
     /// <summary>Xoá cả một đơn — mọi dòng cùng `saleGroupId`.</summary>
     [HttpDelete("sales/group/{groupId:guid}")]
     public async Task<IActionResult> DeleteSaleGroup(Guid groupId, CancellationToken ct) =>
