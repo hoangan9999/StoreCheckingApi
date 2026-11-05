@@ -59,41 +59,37 @@ jobs:
             --logger "console;verbosity=normal" \
             --logger "trx;LogFileName=results.trx" --results-directory ./trx
 
-      # Đỏ thì in thẳng tên test và câu assert ra Job Summary.
+      # Đỏ thì phát tên test và câu assert thành ANNOTATION.
       #
-      # Lý do có bước này: log của Actions chỉ đọc được khi đã đăng nhập GitHub, còn
-      # Job Summary thì nằm trong `output.summary` của check-run và lấy được bằng một
-      # lời gọi api.github.com không cần token. Thiếu nó thì một lần CI đỏ là phải mở
-      # trình duyệt đăng nhập, hoặc tệ hơn là đoán — đã đoán trượt hai vòng vì chuyện này.
-      - name: Test đỏ thì tóm tắt ra Job Summary
+      # Lý do: log của Actions chỉ đọc được khi đã đăng nhập GitHub, còn annotation lấy
+      # được bằng một lời gọi api.github.com không cần token — nên lý do đỏ đọc được từ
+      # bất cứ máy nào. (Job Summary KHÔNG dùng được: `output.summary` của check-run trả
+      # về null, đã thử.) Thiếu cái này thì một lần CI đỏ là phải mở trình duyệt đăng
+      # nhập, hoặc đoán — đã đoán trượt hai vòng liền vì đúng chuyện này.
+      - name: Test đỏ thì phát annotation đọc được qua API
         if: failure()
         run: |
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
           import glob, xml.etree.ElementTree as ET
 
           NS = '{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}'
-          shown = 0
+          n = 0
 
           for path in sorted(glob.glob('trx/*.trx')):
               for r in ET.parse(path).getroot().iter(NS + 'UnitTestResult'):
                   if r.get('outcome') != 'Failed':
                       continue
-                  shown += 1
-                  # Mười cái đầu là đủ: quá số đó thì gần như chắc chắn cùng một nguyên nhân.
-                  if shown > 10:
+                  n += 1
+                  # Mười cái đầu là đủ: quá số đó thì gần như chắc chắn cùng một nguyên nhân,
+                  # và GitHub cũng chỉ hiện chừng đó annotation cho mỗi bước.
+                  if n > 10:
                       continue
                   msg = r.find(f'.//{NS}Message')
-                  trace = r.find(f'.//{NS}StackTrace')
-                  print(f"### {r.get('testName')}")
-                  print('```')
-                  print((msg.text or '').strip()[:1200])
-                  # Một dòng stack là đủ để biết assert nào — nhiều hơn chỉ là nhiễu.
-                  first = next((l for l in (trace.text or '').splitlines() if l.strip()), '') if trace is not None else ''
-                  if first:
-                      print(first.strip()[:200])
-                  print('```')
+                  # Một dòng: lệnh ::error:: của workflow không mang xuống dòng thô được.
+                  text = ' '.join((msg.text or '').split())[:600]
+                  print(f"::error title={r.get('testName')}::{text}")
 
-          print(f"\n**{shown} test đỏ.**" + (' Chỉ in 10 cái đầu.' if shown > 10 else ''))
+          print(f"::error title=Tổng::{n} test đỏ")
           PY
 
       # A skipped suite must never pass for a green build. These tests skip themselves
