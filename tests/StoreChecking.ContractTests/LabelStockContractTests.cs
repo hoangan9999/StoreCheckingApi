@@ -417,4 +417,84 @@ public sealed class LabelStockContractTests(ApiFactory api)
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         Assert.Equal(100, await Remaining(a, ofA));
     }
+
+    // ---------- Một dòng nhãn, nhiều sản phẩm ----------
+
+    // Nhãn in gộp một dòng "Protect × 5" mà trong gói thật ra là 3 Basic + 2 Premium.
+    // Người đóng gói là người duy nhất biết, nên phải tách được.
+    [DbFact]
+    public async Task Tach_mot_dong_nhan_thanh_hai_san_pham()
+    {
+        var c = NewUser();
+        var basic = await NewProduct(c, quantity: 10);
+        var premium = await NewProduct(c, product: "Premium", quantity: 10,
+            batch: "Lô B", importDate: "2026-08-02");
+
+        var res = await c.PostJson("/api/inventory/deduct-from-label", new
+        {
+            orderCode = "SPXVN020",
+            lines = new[]
+            {
+                new { sourceName = Protect, variant = "", labelQty = 5, productId = basic, quantity = 3 },
+                new { sourceName = Protect, variant = "", labelQty = 5, productId = premium, quantity = 2 },
+            },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var body = await Json.Read(res);
+        Assert.Equal(5, body.GetProperty("unitsTotal").GetInt32());
+        Assert.Equal(2, body.GetProperty("products").GetArrayLength());
+
+        Assert.Equal(7, await Remaining(c, basic));
+        Assert.Equal(8, await Remaining(c, premium));
+    }
+
+    // Một chữ bị tách ra hai mặt hàng thì KHÔNG có gợi ý nào đúng cả. Nhớ lấy nửa nào
+    // ghi sau cùng là lần sau điền sẵn một con số chưa bao giờ đúng.
+    [DbFact]
+    public async Task Dong_bi_tach_thi_khong_ghi_goi_y()
+    {
+        var c = NewUser();
+        var basic = await NewProduct(c, quantity: 10);
+        var premium = await NewProduct(c, product: "Premium", quantity: 10,
+            batch: "Lô B", importDate: "2026-08-02");
+
+        await c.PostJson("/api/inventory/deduct-from-label", new
+        {
+            orderCode = "SPXVN021",
+            lines = new[]
+            {
+                new { sourceName = Protect, variant = "", labelQty = 5, productId = basic, quantity = 3 },
+                new { sourceName = Protect, variant = "", labelQty = 5, productId = premium, quantity = 2 },
+            },
+        });
+
+        Assert.Empty((await Json.Read(await c.GetAsync("/api/inventory/label-aliases"))).EnumerateArray());
+    }
+
+    // Còn dòng không bị tách thì vẫn nhớ như thường — cùng một request, hai số phận.
+    [DbFact]
+    public async Task Trong_cung_mot_nhan_dong_khong_tach_van_duoc_nho()
+    {
+        var c = NewUser();
+        var basic = await NewProduct(c, quantity: 10);
+        var premium = await NewProduct(c, product: "Premium", quantity: 10,
+            batch: "Lô B", importDate: "2026-08-02");
+
+        await c.PostJson("/api/inventory/deduct-from-label", new
+        {
+            orderCode = "SPXVN022",
+            lines = new[]
+            {
+                new { sourceName = Protect, variant = "", labelQty = 5, productId = basic, quantity = 3 },
+                new { sourceName = Protect, variant = "", labelQty = 5, productId = premium, quantity = 2 },
+                new { sourceName = Combo2, variant = "", labelQty = 1, productId = basic, quantity = 2 },
+            },
+        });
+
+        var aliases = await Json.Read(await c.GetAsync("/api/inventory/label-aliases"));
+        Assert.Equal(1, aliases.GetArrayLength());
+        Assert.Equal("protect basic (combo 2 cái )", aliases[0].GetProperty("sourceName").GetString());
+        Assert.Equal(2, aliases[0].GetProperty("units").GetInt32());
+    }
 }

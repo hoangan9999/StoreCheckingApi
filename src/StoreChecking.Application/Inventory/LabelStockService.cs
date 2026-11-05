@@ -255,12 +255,18 @@ public sealed class LabelStockService(
     private async Task RememberAsync(
         IReadOnlyList<DeductLine> lines, Dictionary<Guid, Product> picked, CancellationToken ct)
     {
-        foreach (var line in lines)
+        // Grouped by wording, because one printed line can be split across several
+        // products — a line of five that was really three Basic and two Premium. There is
+        // no single answer to suggest for a wording like that, so the honest thing is to
+        // suggest nothing and let the person split it again. Remembering whichever half
+        // happened to be written last would pre-fill a figure that was never right.
+        foreach (var group in lines.GroupBy(l => (LabelText.Key(l.SourceName), LabelText.Key(l.Variant))))
         {
-            var nameKey = LabelText.Key(line.SourceName);
-            var variantKey = LabelText.Key(line.Variant);
+            var (nameKey, variantKey) = group.Key;
             if (nameKey.Length == 0 && variantKey.Length == 0) continue;
+            if (group.Count() > 1) continue;
 
+            var line = group.First();
             if (picked[line.ProductId].KindId is not Guid kindId) continue;
 
             // "Protect Basic (Combo 2 cái)" prints a quantity of 1 and costs 2 units, so
