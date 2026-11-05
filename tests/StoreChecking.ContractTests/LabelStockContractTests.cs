@@ -366,12 +366,8 @@ public sealed class LabelStockContractTests(ApiFactory api)
 
         var aliases = await Json.Read(await c.GetAsync("/api/inventory/label-aliases"));
         Assert.Equal(1, aliases.GetArrayLength());
-
-        var stock = await Json.Read(await c.GetAsync("/api/inventory/stock"));
-        var premiumKind = stock.EnumerateArray()
-            .First(x => x.GetProperty("id").GetGuid() == premium)
-            .GetProperty("kindId").GetGuid();
-        Assert.Equal(premiumKind, aliases[0].GetProperty("kindId").GetGuid());
+        // `premium` nay chính là id mặt hàng, không phải id dòng sản phẩm.
+        Assert.Equal(premium, aliases[0].GetProperty("kindId").GetGuid());
     }
 
     // ---------- Xoá dòng bán phải gỡ dấu ----------
