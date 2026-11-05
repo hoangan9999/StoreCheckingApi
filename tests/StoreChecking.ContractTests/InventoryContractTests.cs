@@ -716,7 +716,8 @@ public sealed class InventoryContractTests(ApiFactory api)
 
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         Assert.Contains("ít nhất một dòng", (await Json.Read(res)).GetProperty("error").GetString());
-        Assert.Equal(1, (await Json.Items(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
+        // `items` của /sales là DÒNG bán, không phải đơn — đơn hai dòng vẫn còn nguyên.
+        Assert.Equal(2, (await Json.Items(await c.GetAsync("/api/inventory/sales"))).GetArrayLength());
     }
 
     // Tồn phải tính lại có CỘNG LẠI phần đơn này đang giữ, không thì nâng 2 lên 3 bị đo
