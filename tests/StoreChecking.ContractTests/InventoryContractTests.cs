@@ -755,9 +755,10 @@ public sealed class InventoryContractTests(ApiFactory api)
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         Assert.Contains("cần 6, còn 5", (await Json.Read(res)).GetProperty("error").GetString());
 
+        // /stock chỉ liệt kê thứ CÒN hàng, nên bán hết là rời khỏi danh sách — đó chính
+        // là remaining 0, và tìm dòng của nó rồi đọc remaining sẽ ném lỗi chứ không ra 0.
         var stock = await Json.Read(await c.GetAsync("/api/inventory/stock"));
-        Assert.Equal(0, stock.EnumerateArray()
-            .First(x => x.GetProperty("id").GetGuid() == p1).GetProperty("remaining").GetInt64());
+        Assert.DoesNotContain(stock.EnumerateArray(), x => x.GetProperty("id").GetGuid() == p1);
     }
 
     [DbFact]
