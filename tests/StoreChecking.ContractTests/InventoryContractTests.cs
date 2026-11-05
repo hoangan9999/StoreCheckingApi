@@ -579,7 +579,7 @@ public sealed class InventoryContractTests(ApiFactory api)
         { name = "Lô sau", importDate = "2026-08-01", totalCost = 500m, note = (string?)null, priority = 5 });
 
         var stock = await Json.Read(await c.GetAsync("/api/inventory/stock"));
-        Json.HasExactly(stock[0], "id", "name", "batchId", "batchName", "batchPriority", "sellPrice", "remaining");
+        Json.HasExactly(stock[0], "id", "name", "batchId", "batchName", "batchPriority", "sellPrice", "remaining", "kindId");
         Assert.Equal("Lô trước", stock[0].GetProperty("batchName").GetString());
         Assert.Equal(1, stock[0].GetProperty("batchPriority").GetInt32());
         Assert.Equal("Lô sau", stock[1].GetProperty("batchName").GetString());
