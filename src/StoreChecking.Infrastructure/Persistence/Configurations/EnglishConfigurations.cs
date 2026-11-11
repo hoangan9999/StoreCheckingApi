@@ -34,3 +34,37 @@ public sealed class SavedSentenceConfiguration : IEntityTypeConfiguration<SavedS
         e.HasIndex(x => new { x.UserId, x.CreatedAt });
     }
 }
+
+public sealed class EnglishTopicConfiguration : IEntityTypeConfiguration<EnglishTopic>
+{
+    public void Configure(EntityTypeBuilder<EnglishTopic> e)
+    {
+        e.ToTable("english_topics");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.UserId).HasColumnName("user_id");
+        e.Property(x => x.Title).HasColumnName("title");
+        e.Property(x => x.Position).HasColumnName("position");
+        e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+        e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        e.HasIndex(x => new { x.UserId, x.Position });
+    }
+}
+
+public sealed class EnglishLessonLineConfiguration : IEntityTypeConfiguration<EnglishLessonLine>
+{
+    public void Configure(EntityTypeBuilder<EnglishLessonLine> e)
+    {
+        e.ToTable("english_lesson_lines");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.UserId).HasColumnName("user_id");
+        e.Property(x => x.TopicId).HasColumnName("topic_id");
+        e.Property(x => x.Kind).HasColumnName("kind");
+        e.Property(x => x.Speaker).HasColumnName("speaker");
+        e.Property(x => x.En).HasColumnName("en");
+        e.Property(x => x.Vi).HasColumnName("vi");
+        e.Property(x => x.Position).HasColumnName("position");
+        e.HasIndex(x => new { x.TopicId, x.Position });
+    }
+}

@@ -38,3 +38,37 @@ public interface ISavedSentenceRepository
     void Add(SavedSentence row);
     void Remove(SavedSentence row);
 }
+
+/// <summary>
+/// Lessons kept by topic.
+/// <para>A topic and its lines always move together — read together, replaced together,
+/// deleted together — so one repository owns both rather than two that must be kept in
+/// step by whoever remembers to.</para>
+/// </summary>
+public interface IEnglishTopicRepository
+{
+    /// <summary>Topics in the user's own order, without their lines.</summary>
+    Task<IReadOnlyList<EnglishTopic>> ListAsync(CancellationToken ct = default);
+
+    Task<EnglishTopic?> FindAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// The smallest position in use, so a new topic can sit above it.
+    /// <para><c>null</c> when there are no topics yet.</para>
+    /// </summary>
+    Task<int?> MinPositionAsync(CancellationToken ct = default);
+
+    /// <summary>Lines of one topic, in order.</summary>
+    Task<IReadOnlyList<EnglishLessonLine>> LinesAsync(Guid topicId, CancellationToken ct = default);
+
+    /// <summary>
+    /// How many lines each topic has, split by kind — what the list screen shows without
+    /// having to load every line of every lesson.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, (int Lines, int Phrases)>> CountsAsync(CancellationToken ct = default);
+
+    void Add(EnglishTopic row);
+    void Remove(EnglishTopic row);
+    void AddLines(IEnumerable<EnglishLessonLine> rows);
+    void RemoveLines(IEnumerable<EnglishLessonLine> rows);
+}

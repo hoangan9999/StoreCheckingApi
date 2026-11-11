@@ -59,4 +59,41 @@ public sealed class EnglishController(EnglishService english) : ControllerBase
     [HttpDelete("sentences/{id:guid}")]
     public async Task<IActionResult> DeleteSentence(Guid id, CancellationToken ct) =>
         await english.DeleteSentenceAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Bài học theo chủ đề ----------
+
+    /// <summary>Danh sách chủ đề, theo thứ tự người dùng tự sắp, kèm số dòng mỗi chủ đề.</summary>
+    /// <remarks>Không trả nội dung bài — màn hình danh sách không hiện nội dung, và một chủ đề là hàng chục dòng.</remarks>
+    [HttpGet("topics")]
+    public async Task<IActionResult> ListTopics(CancellationToken ct) =>
+        Ok(await english.ListTopicsAsync(ct));
+
+    /// <summary>Mở một chủ đề: tên và toàn bộ dòng trong đó, đúng thứ tự.</summary>
+    [HttpGet("topics/{id:guid}")]
+    public async Task<IActionResult> GetTopic(Guid id, CancellationToken ct) =>
+        await english.GetTopicAsync(id, ct) is { } t ? Ok(t) : NotFound();
+
+    /// <summary>Lưu các chủ đề dán từ nơi khác vào.</summary>
+    /// <remarks>
+    /// Nhận cả DANH SÁCH chủ đề và ghi trong một transaction: một lần dán thường mang
+    /// nhiều chủ đề, mà vào được một nửa thì người dùng phải tự dò xem nửa nào đã vào.
+    /// </remarks>
+    [HttpPost("topics")]
+    public async Task<IActionResult> ImportTopics([FromBody] ImportTopicsRequest body, CancellationToken ct) =>
+        Ok(await english.ImportTopicsAsync(body, ct));
+
+    /// <summary>Lưu lại cả một chủ đề: tên và mọi dòng trong đó.</summary>
+    /// <remarks>
+    /// Thay thế toàn phần. Sửa một chữ, xoá một dòng, thêm một dòng và đổi thứ tự đều là
+    /// cùng một thao tác trên cùng một danh sách ngắn — tách thành bốn endpoint là bốn
+    /// đường cho một bài lưu dở.
+    /// </remarks>
+    [HttpPut("topics/{id:guid}")]
+    public async Task<IActionResult> SaveTopic(Guid id, [FromBody] SaveTopicRequest body, CancellationToken ct) =>
+        await english.SaveTopicAsync(id, body, ct) is { } t ? Ok(t) : NotFound();
+
+    /// <summary>Xoá một chủ đề. Mọi dòng trong đó đi theo.</summary>
+    [HttpDelete("topics/{id:guid}")]
+    public async Task<IActionResult> DeleteTopic(Guid id, CancellationToken ct) =>
+        await english.DeleteTopicAsync(id, ct) ? NoContent() : NotFound();
 }

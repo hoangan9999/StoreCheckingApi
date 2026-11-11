@@ -58,3 +58,51 @@ public sealed class SavedSentenceRepository(AppDbContext db) : ISavedSentenceRep
     public void Add(SavedSentence row) => db.SavedSentences.Add(row);
     public void Remove(SavedSentence row) => db.SavedSentences.Remove(row);
 }
+
+public sealed class EnglishTopicRepository(AppDbContext db) : IEnglishTopicRepository
+{
+    // Position first, then newest: a topic nobody has reordered keeps position 0 alongside
+    // its siblings, and the date is what separates them.
+    public async Task<IReadOnlyList<EnglishTopic>> ListAsync(CancellationToken ct = default) =>
+        await db.EnglishTopics
+            .OrderBy(x => x.Position)
+            .ThenByDescending(x => x.CreatedAt)
+            .ToListAsync(ct);
+
+    public Task<EnglishTopic?> FindAsync(Guid id, CancellationToken ct = default) =>
+        db.EnglishTopics.FirstOrDefaultAsync(x => x.Id == id, ct);
+
+    public async Task<int?> MinPositionAsync(CancellationToken ct = default) =>
+        await db.EnglishTopics.Select(x => (int?)x.Position).MinAsync(ct);
+
+    public async Task<IReadOnlyList<EnglishLessonLine>> LinesAsync(
+        Guid topicId, CancellationToken ct = default) =>
+        await db.EnglishLessonLines
+            .Where(x => x.TopicId == topicId)
+            .OrderBy(x => x.Position)
+            .ToListAsync(ct);
+
+    // One grouped query for every topic at once. Asking per topic would be one round trip
+    // per row of the list screen, which is the shape that quietly gets slower every month.
+    public async Task<IReadOnlyDictionary<Guid, (int Lines, int Phrases)>> CountsAsync(
+        CancellationToken ct = default)
+    {
+        var rows = await db.EnglishLessonLines
+            .GroupBy(x => new { x.TopicId, x.Kind })
+            .Select(g => new { g.Key.TopicId, g.Key.Kind, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(r => r.TopicId)
+            .ToDictionary(
+                g => g.Key,
+                g => (
+                    Lines: g.Where(r => r.Kind == EnglishLessonLine.Line).Sum(r => r.Count),
+                    Phrases: g.Where(r => r.Kind == EnglishLessonLine.Phrase).Sum(r => r.Count)));
+    }
+
+    public void Add(EnglishTopic row) => db.EnglishTopics.Add(row);
+    public void Remove(EnglishTopic row) => db.EnglishTopics.Remove(row);
+    public void AddLines(IEnumerable<EnglishLessonLine> rows) => db.EnglishLessonLines.AddRange(rows);
+    public void RemoveLines(IEnumerable<EnglishLessonLine> rows) => db.EnglishLessonLines.RemoveRange(rows);
+}

@@ -78,6 +78,7 @@ public static class DependencyInjection
         services.AddScoped<IWorkMonthNoteRepository, WorkMonthNoteRepository>();
         services.AddScoped<IEnglishWordRepository, EnglishWordRepository>();
         services.AddScoped<ISavedSentenceRepository, SavedSentenceRepository>();
+        services.AddScoped<IEnglishTopicRepository, EnglishTopicRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IPackingVideoRepository, PackingVideoRepository>();
         services.AddScoped<IMediaImageRepository, MediaImageRepository>();
