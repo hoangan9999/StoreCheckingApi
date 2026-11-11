@@ -17,6 +17,20 @@ public static class Json
         return JsonDocument.Parse(text).RootElement.Clone();
     }
 
+    /// <summary>
+    /// Đọc body và KHẲNG ĐỊNH là 2xx, nếu không thì ném kèm nguyên văn máy chủ trả về.
+    /// <para>Có vì `Json.Read` trên một lỗi 400 trả về object lỗi, rồi dòng `body[0]`
+    /// sau đó mới ngã với "requires an element of type 'Array'" — một câu không nói gì về
+    /// nguyên nhân. Log CI chỉ đọc được khi đã đăng nhập GitHub, nên câu báo lỗi của test
+    /// là chỗ duy nhất lý do thật đi ra được.</para>
+    /// </summary>
+    public static async Task<JsonElement> Ok(HttpResponseMessage res)
+    {
+        var text = await res.Content.ReadAsStringAsync();
+        Assert.True(res.IsSuccessStatusCode, $"Máy chủ trả {(int)res.StatusCode}: {text}");
+        return JsonDocument.Parse(text).RootElement.Clone();
+    }
+
     /// <summary>Asserts the object has exactly these property names, no more and no fewer.</summary>
     public static void HasExactly(JsonElement obj, params string[] names)
     {

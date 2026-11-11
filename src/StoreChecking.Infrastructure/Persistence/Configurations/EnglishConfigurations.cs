@@ -66,5 +66,14 @@ public sealed class EnglishLessonLineConfiguration : IEntityTypeConfiguration<En
         e.Property(x => x.Vi).HasColumnName("vi");
         e.Property(x => x.Position).HasColumnName("position");
         e.HasIndex(x => new { x.TopicId, x.Position });
+
+        // Khai quan hệ dù không dùng navigation property nào. Thiếu nó thì EF KHÔNG biết
+        // topic_id là khoá ngoại, nên khi lưu một chủ đề mới cùng các dòng của nó trong
+        // một lượt, EF có thể chèn dòng trước chủ đề — và database từ chối. Đây là thứ
+        // chỉ hỏng ở đường thành công, nên mọi test kiểm tra đầu vào vẫn xanh.
+        e.HasOne<EnglishTopic>()
+            .WithMany()
+            .HasForeignKey(x => x.TopicId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

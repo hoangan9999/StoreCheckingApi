@@ -30,7 +30,7 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
     /// <summary>Một chủ đề mẫu, đúng hình dạng nội dung thật: hội thoại rồi tới cụm từ.</summary>
     private static async Task<Guid> NewTopic(HttpClient c, string title = "How's work going?")
     {
-        var body = await Json.Read(await Import(c, Topic(title,
+        var body = await Json.Ok(await Import(c, Topic(title,
             Line("teacher", "So, how's work going these days?", "Dạo này công việc thế nào?"),
             Line("you", "It's going well, thank you.", "Mọi thứ ổn, cảm ơn."),
             Phrase("these days", "dạo này"))));
@@ -69,7 +69,7 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
     public async Task Giu_nguyen_thu_tu_dong_nhu_luc_dan()
     {
         var c = NewUser();
-        var id = (await Json.Read(await Import(c, Topic("Thứ tự",
+        var id = (await Json.Ok(await Import(c, Topic("Thứ tự",
             Line("teacher", "A", "a"),
             Line("you", "B", "b"),
             Line("teacher", "C", "c"),
@@ -88,7 +88,7 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
     {
         var c = NewUser();
 
-        var made = await Json.Read(await Import(c,
+        var made = await Json.Ok(await Import(c,
             Topic("Chủ đề 1", Line("teacher", "One", "Một")),
             Topic("Chủ đề 2", Line("teacher", "Two", "Hai")),
             Topic("Chủ đề 3", Line("you", "Three", "Ba"))));
