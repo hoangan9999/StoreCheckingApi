@@ -72,8 +72,13 @@ public sealed class EnglishTopicRepository(AppDbContext db) : IEnglishTopicRepos
     public Task<EnglishTopic?> FindAsync(Guid id, CancellationToken ct = default) =>
         db.EnglishTopics.FirstOrDefaultAsync(x => x.Id == id, ct);
 
+    // FirstOrDefault trên danh sách đã sắp, không phải Min: chưa có chủ đề nào thì câu
+    // này trả null gọn gàng, khỏi phụ thuộc vào chuyện Min xử lý tập rỗng ra sao.
     public async Task<int?> MinPositionAsync(CancellationToken ct = default) =>
-        await db.EnglishTopics.Select(x => (int?)x.Position).MinAsync(ct);
+        await db.EnglishTopics
+            .OrderBy(x => x.Position)
+            .Select(x => (int?)x.Position)
+            .FirstOrDefaultAsync(ct);
 
     public async Task<IReadOnlyList<EnglishLessonLine>> LinesAsync(
         Guid topicId, CancellationToken ct = default) =>

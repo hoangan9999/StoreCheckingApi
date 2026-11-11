@@ -176,6 +176,10 @@ public sealed class EnglishService(
         {
             var topic = new EnglishTopic
             {
+                // Sinh id ở đây chứ không để database sinh. Dòng con mang topic_id, mà
+                // nếu id chỉ có SAU khi lưu thì lúc dựng chúng nó mang Guid rỗng và khoá
+                // ngoại gãy — hỏng ngay đường thành công, không hỏng đường kiểm tra nào.
+                Id = Guid.NewGuid(),
                 UserId = user.Id,
                 Title = Title(w.Title),
                 Position = position++,
