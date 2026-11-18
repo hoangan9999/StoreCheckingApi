@@ -111,7 +111,7 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
             Phrase("z", "3")));
 
         var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];
-        Json.HasExactly(row, "id", "title", "lineCount", "phraseCount", "createdAt", "updatedAt");
+        Json.HasExactly(row, "id", "title", "lineCount", "phraseCount", "studying", "createdAt", "updatedAt");
         Assert.Equal(2, row.GetProperty("lineCount").GetInt32());
         Assert.Equal(3, row.GetProperty("phraseCount").GetInt32());
     }
@@ -296,6 +296,122 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
         // Và bài của A còn nguyên.
         var t = await Json.Read(await a.GetAsync($"/api/english/topics/{id}"));
         Assert.Equal("How's work going?", t.GetProperty("title").GetString());
+    }
+
+    // ---------- Dấu "đang học dang dở" ----------
+
+    /// <summary>Lấy một chủ đề ra khỏi danh sách, theo id.</summary>
+    private static async Task<JsonElement> InList(HttpClient c, Guid id)
+    {
+        var list = await Json.Read(await c.GetAsync("/api/english/topics"));
+        return list.EnumerateArray().Single(t => t.GetProperty("id").GetGuid() == id);
+    }
+
+    [DbFact]
+    public async Task Bai_vua_dan_vao_thi_chua_danh_dau()
+    {
+        var c = NewUser();
+        var id = await NewTopic(c);
+
+        Assert.False((await InList(c, id)).GetProperty("studying").GetBoolean());
+    }
+
+    [DbFact]
+    public async Task Danh_dau_dang_hoc_roi_mo_lai_van_con()
+    {
+        var c = NewUser();
+        var id = await NewTopic(c);
+
+        var res = await c.PutJson($"/api/english/topics/{id}/studying", new { studying = true });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        // Trả về chính hàng của danh sách, để giao diện khỏi phải nạp lại cả danh sách.
+        var back = await Json.Read(res);
+        Assert.True(back.GetProperty("studying").GetBoolean());
+        Assert.Equal("How's work going?", back.GetProperty("title").GetString());
+        Assert.Equal(2, back.GetProperty("lineCount").GetInt32());
+        Assert.Equal(1, back.GetProperty("phraseCount").GetInt32());
+
+        Assert.True((await InList(c, id)).GetProperty("studying").GetBoolean());
+    }
+
+    [DbFact]
+    public async Task Bo_dau_thi_het_dang_hoc()
+    {
+        var c = NewUser();
+        var id = await NewTopic(c);
+
+        await c.PutJson($"/api/english/topics/{id}/studying", new { studying = true });
+        await c.PutJson($"/api/english/topics/{id}/studying", new { studying = false });
+
+        Assert.False((await InList(c, id)).GetProperty("studying").GetBoolean());
+    }
+
+    /// <summary>
+    /// ⚠️ Chốt chính: <b>sửa bài KHÔNG được xoá dấu</b>.
+    ///
+    /// <para>Sửa một lỗi chính tả trong bài không phải là tuyên bố rằng đã học xong nó.
+    /// Mà bài hay bị sửa nhất lại chính là bài đang học dở — nên nếu lưu bài mà dấu bay
+    /// mất thì dấu đó hỏng đúng ở chỗ duy nhất nó có việc.</para>
+    /// </summary>
+    [DbFact]
+    public async Task Sua_bai_thi_dau_dang_hoc_NAM_YEN()
+    {
+        var c = NewUser();
+        var id = await NewTopic(c);
+        await c.PutJson($"/api/english/topics/{id}/studying", new { studying = true });
+
+        var res = await c.PutJson($"/api/english/topics/{id}", new
+        {
+            title = "Tên mới",
+            lines = new[] { Line("teacher", "Sửa rồi", "Đã sửa") },
+        });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        var row = await InList(c, id);
+        Assert.Equal("Tên mới", row.GetProperty("title").GetString());
+        Assert.True(row.GetProperty("studying").GetBoolean());
+    }
+
+    /// <summary>
+    /// Đánh dấu nhiều bài cùng lúc là chuyện bình thường, và đánh dấu bài này không được
+    /// lặng lẽ bỏ dấu bài kia — đó là lý do cờ nằm trên từng bài chứ không phải một ô
+    /// "bài đang học" duy nhất.
+    /// </summary>
+    [DbFact]
+    public async Task Danh_dau_nhieu_bai_cung_luc_duoc()
+    {
+        var c = NewUser();
+        var mot = await NewTopic(c, "Bài một");
+        var hai = await NewTopic(c, "Bài hai");
+
+        await c.PutJson($"/api/english/topics/{mot}/studying", new { studying = true });
+        await c.PutJson($"/api/english/topics/{hai}/studying", new { studying = true });
+
+        Assert.True((await InList(c, mot)).GetProperty("studying").GetBoolean());
+        Assert.True((await InList(c, hai)).GetProperty("studying").GetBoolean());
+    }
+
+    [DbFact]
+    public async Task Danh_dau_chu_de_khong_ton_tai_thi_404()
+    {
+        var res = await NewUser()
+            .PutJson($"/api/english/topics/{Guid.NewGuid()}/studying", new { studying = true });
+
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
+    [DbFact]
+    public async Task Nguoi_khac_khong_danh_dau_duoc_bai_cua_minh()
+    {
+        var a = NewUser();
+        var b = NewUser();
+        var id = await NewTopic(a);
+
+        var res = await b.PutJson($"/api/english/topics/{id}/studying", new { studying = true });
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+
+        Assert.False((await InList(a, id)).GetProperty("studying").GetBoolean());
     }
 
     [DbFact]

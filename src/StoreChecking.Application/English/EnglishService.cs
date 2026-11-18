@@ -140,7 +140,8 @@ public sealed class EnglishService(
         return rows.Select(t =>
         {
             var c = counts.TryGetValue(t.Id, out var n) ? n : (Lines: 0, Phrases: 0);
-            return new TopicSummaryDto(t.Id, t.Title, c.Lines, c.Phrases, t.CreatedAt, t.UpdatedAt);
+            return new TopicSummaryDto(
+                t.Id, t.Title, c.Lines, c.Phrases, t.Studying, t.CreatedAt, t.UpdatedAt);
         }).ToList();
     }
 
@@ -195,7 +196,7 @@ public sealed class EnglishService(
                 topic.Id, topic.Title,
                 lines.Count(l => l.Kind == EnglishLessonLine.Line),
                 lines.Count(l => l.Kind == EnglishLessonLine.Phrase),
-                topic.CreatedAt, topic.UpdatedAt));
+                topic.Studying, topic.CreatedAt, topic.UpdatedAt));
         }
 
         await uow.SaveChangesAsync(ct);
@@ -208,6 +209,12 @@ public sealed class EnglishService(
     /// and reordering are all the same operation on the same small list, and splitting
     /// them into four endpoints would be four ways for a lesson to end up half-saved.</para>
     /// </summary>
+    /// <remarks>
+    /// ⚠️ Deliberately does NOT touch <see cref="EnglishTopic.Studying"/>. Fixing a typo in
+    /// a lesson is not a statement about whether it is still being studied, and quietly
+    /// clearing the mark on every save would make the mark useless exactly for the lesson
+    /// being worked on. A contract test holds this.
+    /// </remarks>
     /// <returns><c>null</c> when the current user has no topic with that id.</returns>
     public async Task<TopicDto?> SaveTopicAsync(
         Guid id, SaveTopicRequest body, CancellationToken ct = default)
@@ -228,6 +235,30 @@ public sealed class EnglishService(
 
         await uow.SaveChangesAsync(ct);
         return new TopicDto(topic.Id, topic.Title, lines.Select(ToDto).ToList(),
+            topic.CreatedAt, topic.UpdatedAt);
+    }
+
+    /// <summary>
+    /// Tick or untick "đang học dang dở" on one topic.
+    /// <para>Kept apart from <see cref="SaveTopicAsync"/> so that ticking a box costs one
+    /// small call and cannot rewrite any lesson content by accident.</para>
+    /// <para><c>UpdatedAt</c> is left alone on purpose: the column means "the lesson was
+    /// edited", it is what the list shows as the date, and ticking a box edits nothing.</para>
+    /// </summary>
+    /// <returns><c>null</c> when the current user has no topic with that id.</returns>
+    public async Task<TopicSummaryDto?> SetStudyingAsync(
+        Guid id, SetStudyingRequest body, CancellationToken ct = default)
+    {
+        var topic = await topics.FindAsync(id, ct);
+        if (topic is null) return null;
+
+        topic.Studying = body.Studying;
+        await uow.SaveChangesAsync(ct);
+
+        var counts = await topics.CountsAsync(ct);
+        var c = counts.TryGetValue(topic.Id, out var n) ? n : (Lines: 0, Phrases: 0);
+        return new TopicSummaryDto(
+            topic.Id, topic.Title, c.Lines, c.Phrases, topic.Studying,
             topic.CreatedAt, topic.UpdatedAt);
     }
 

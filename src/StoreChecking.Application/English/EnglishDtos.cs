@@ -31,7 +31,7 @@ public record SaveLessonLine(string Kind, string? Speaker, string En, string? Vi
 
 /// <summary>A topic in the list — without its lines, which the list never shows.</summary>
 public record TopicSummaryDto(
-    Guid Id, string Title, int LineCount, int PhraseCount,
+    Guid Id, string Title, int LineCount, int PhraseCount, bool Studying,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 /// <summary>A topic opened: its title and every row of it, in order.</summary>
@@ -49,3 +49,11 @@ public record SaveTopicRequest(string Title, IReadOnlyList<SaveLessonLine>? Line
 /// not land at all.</para>
 /// </summary>
 public record ImportTopicsRequest(IReadOnlyList<SaveTopicRequest>? Topics);
+
+/// <summary>
+/// Tick or untick "đang học dang dở" on one topic.
+/// <para>Its own tiny endpoint rather than a field on <see cref="SaveTopicRequest"/>:
+/// ticking a box must not need the lesson's whole contents in hand, and saving an edited
+/// lesson must not be able to clear the mark by leaving the field out.</para>
+/// </summary>
+public record SetStudyingRequest(bool Studying);

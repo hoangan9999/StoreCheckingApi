@@ -23,6 +23,15 @@ public class EnglishTopic : IOwnedByUser
     /// </summary>
     public int Position { get; set; }
 
+    /// <summary>
+    /// Marked by the user as a lesson they are part-way through.
+    /// <para>It exists so that closing the app and coming back does not lose which lesson
+    /// was being worked on — the titles alone say nothing about progress. A flag per topic
+    /// rather than one "current lesson" field, because having two on the go at once is
+    /// normal and a single field would silently clear the first one.</para>
+    /// </summary>
+    public bool Studying { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

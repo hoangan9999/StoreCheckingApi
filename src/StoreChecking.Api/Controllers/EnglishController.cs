@@ -92,6 +92,17 @@ public sealed class EnglishController(EnglishService english) : ControllerBase
     public async Task<IActionResult> SaveTopic(Guid id, [FromBody] SaveTopicRequest body, CancellationToken ct) =>
         await english.SaveTopicAsync(id, body, ct) is { } t ? Ok(t) : NotFound();
 
+    /// <summary>Đánh dấu / bỏ dấu "đang học dang dở" cho một chủ đề.</summary>
+    /// <remarks>
+    /// Endpoint riêng chứ không phải một trường trong PUT ở trên: tích một ô không nên
+    /// đòi phải cầm sẵn toàn bộ nội dung bài, và lưu bài sau khi sửa cũng không được phép
+    /// vô tình xoá dấu vì thiếu trường đó.
+    /// </remarks>
+    [HttpPut("topics/{id:guid}/studying")]
+    public async Task<IActionResult> SetStudying(
+        Guid id, [FromBody] SetStudyingRequest body, CancellationToken ct) =>
+        await english.SetStudyingAsync(id, body, ct) is { } t ? Ok(t) : NotFound();
+
     /// <summary>Xoá một chủ đề. Mọi dòng trong đó đi theo.</summary>
     [HttpDelete("topics/{id:guid}")]
     public async Task<IActionResult> DeleteTopic(Guid id, CancellationToken ct) =>
