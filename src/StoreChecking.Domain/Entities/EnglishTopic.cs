@@ -15,7 +15,22 @@ public class EnglishTopic : IOwnedByUser
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
 
+    /// <summary>A conversation to study.</summary>
+    public const string Lesson = "lesson";
+
+    /// <summary>A Vietnamese passage to translate, with its suggested wording.</summary>
+    public const string Translate = "translate";
+
     public string Title { get; set; } = "";
+
+    /// <summary>
+    /// <see cref="Lesson"/> or <see cref="Translate"/> — which of the two lists this topic
+    /// belongs to.
+    /// <para>⚠️ This is what keeps the two lists apart. The two are drawn on screen in
+    /// completely different ways, so a topic in the wrong list renders wrong, not merely
+    /// ugly.</para>
+    /// </summary>
+    public string Kind { get; set; } = Lesson;
 
     /// <summary>
     /// Where it sits in the user's own ordering. A new topic takes <c>min(position) - 1</c>
@@ -48,8 +63,14 @@ public class EnglishLessonLine : IOwnedByUser
     /// <summary>A line of the conversation.</summary>
     public const string Line = "line";
 
-    /// <summary>A row of the "Cụm từ hay" table.</summary>
+    /// <summary>A row of the "Cụm từ hay" table, or of a translation's suggested wording.</summary>
     public const string Phrase = "phrase";
+
+    /// <summary>
+    /// A passage: the Vietnamese to translate in <see cref="Vi"/>, its English in
+    /// <see cref="En"/>. Only ever found in a <see cref="EnglishTopic.Translate"/> topic.
+    /// </summary>
+    public const string Para = "para";
 
     public const string Teacher = "teacher";
     public const string You = "you";

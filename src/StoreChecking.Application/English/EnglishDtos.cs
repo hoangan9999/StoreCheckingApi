@@ -31,12 +31,12 @@ public record SaveLessonLine(string Kind, string? Speaker, string En, string? Vi
 
 /// <summary>A topic in the list — without its lines, which the list never shows.</summary>
 public record TopicSummaryDto(
-    Guid Id, string Title, int LineCount, int PhraseCount, bool Studying,
+    Guid Id, string Title, string Kind, int LineCount, int PhraseCount, bool Studying,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 /// <summary>A topic opened: its title and every row of it, in order.</summary>
 public record TopicDto(
-    Guid Id, string Title, IReadOnlyList<LessonLineDto> Lines,
+    Guid Id, string Title, string Kind, IReadOnlyList<LessonLineDto> Lines,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 /// <summary>One topic being created or replaced.</summary>
@@ -48,7 +48,12 @@ public record SaveTopicRequest(string Title, IReadOnlyList<SaveLessonLine>? Line
 /// conversation, not a single lesson. One call so a paste either lands complete or does
 /// not land at all.</para>
 /// </summary>
-public record ImportTopicsRequest(IReadOnlyList<SaveTopicRequest>? Topics);
+/// <param name="Kind">
+/// Which list these belong to — <c>lesson</c> (default) or <c>translate</c>. One per
+/// request, not one per topic: a single paste, or a single round of AI generation, is
+/// always all of one kind.
+/// </param>
+public record ImportTopicsRequest(IReadOnlyList<SaveTopicRequest>? Topics, string? Kind = null);
 
 /// <summary>
 /// Tick or untick "đang học dang dở" on one topic.

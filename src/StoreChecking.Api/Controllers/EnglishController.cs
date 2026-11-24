@@ -64,9 +64,11 @@ public sealed class EnglishController(EnglishService english) : ControllerBase
 
     /// <summary>Danh sách chủ đề, theo thứ tự người dùng tự sắp, kèm số dòng mỗi chủ đề.</summary>
     /// <remarks>Không trả nội dung bài — màn hình danh sách không hiện nội dung, và một chủ đề là hàng chục dòng.</remarks>
+    /// <param name="kind">`lesson` (mặc định) hoặc `translate` — hai mục tách rời nhau.</param>
+    /// <param name="ct">Token huỷ của request.</param>
     [HttpGet("topics")]
-    public async Task<IActionResult> ListTopics(CancellationToken ct) =>
-        Ok(await english.ListTopicsAsync(ct));
+    public async Task<IActionResult> ListTopics(string? kind, CancellationToken ct) =>
+        Ok(await english.ListTopicsAsync(kind, ct));
 
     /// <summary>Mở một chủ đề: tên và toàn bộ dòng trong đó, đúng thứ tự.</summary>
     [HttpGet("topics/{id:guid}")]

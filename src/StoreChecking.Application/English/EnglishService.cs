@@ -131,17 +131,28 @@ public sealed class EnglishService(
     private static LessonLineDto ToDto(EnglishLessonLine r) =>
         new(r.Id, r.Kind, r.Speaker, r.En, r.Vi);
 
-    /// <summary>Every topic, in the user's own order, with how many rows each one holds.</summary>
-    public async Task<IReadOnlyList<TopicSummaryDto>> ListTopicsAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Every topic of one kind, in the user's own order, with how many rows each one holds.
+    /// </summary>
+    /// <param name="kind">
+    /// <c>lesson</c> (the default when not given) or <c>translate</c>.
+    /// <para>⚠️ Defaulting to <c>lesson</c> rather than "everything" is deliberate: the two
+    /// kinds are drawn on screen in completely different ways, so a mixed list renders
+    /// wrong rather than merely long — and an older client that asks without the parameter
+    /// keeps getting exactly what it got before.</para>
+    /// </param>
+    public async Task<IReadOnlyList<TopicSummaryDto>> ListTopicsAsync(
+        string? kind = null, CancellationToken ct = default)
     {
+        var want = TopicKind(kind);
         var rows = await topics.ListAsync(ct);
         var counts = await topics.CountsAsync(ct);
 
-        return rows.Select(t =>
+        return rows.Where(t => t.Kind == want).Select(t =>
         {
             var c = counts.TryGetValue(t.Id, out var n) ? n : (Lines: 0, Phrases: 0);
             return new TopicSummaryDto(
-                t.Id, t.Title, c.Lines, c.Phrases, t.Studying, t.CreatedAt, t.UpdatedAt);
+                t.Id, t.Title, t.Kind, c.Lines, c.Phrases, t.Studying, t.CreatedAt, t.UpdatedAt);
         }).ToList();
     }
 
@@ -152,7 +163,8 @@ public sealed class EnglishService(
         if (t is null) return null;
 
         var lines = await topics.LinesAsync(t.Id, ct);
-        return new TopicDto(t.Id, t.Title, lines.Select(ToDto).ToList(), t.CreatedAt, t.UpdatedAt);
+        return new TopicDto(
+            t.Id, t.Title, t.Kind, lines.Select(ToDto).ToList(), t.CreatedAt, t.UpdatedAt);
     }
 
     /// <summary>
@@ -169,6 +181,7 @@ public sealed class EnglishService(
         var wanted = body.Topics ?? [];
         if (wanted.Count == 0) throw new ValidationException("Không có chủ đề nào để lưu.");
 
+        var kind = TopicKind(body.Kind);
         var position = (await topics.MinPositionAsync(ct) ?? 0) - wanted.Count;
         var now = DateTimeOffset.UtcNow;
         var made = new List<TopicSummaryDto>();
@@ -183,6 +196,7 @@ public sealed class EnglishService(
                 Id = Guid.NewGuid(),
                 UserId = user.Id,
                 Title = Title(w.Title),
+                Kind = kind,
                 Position = position++,
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -193,7 +207,7 @@ public sealed class EnglishService(
             topics.AddLines(lines);
 
             made.Add(new TopicSummaryDto(
-                topic.Id, topic.Title,
+                topic.Id, topic.Title, topic.Kind,
                 lines.Count(l => l.Kind == EnglishLessonLine.Line),
                 lines.Count(l => l.Kind == EnglishLessonLine.Phrase),
                 topic.Studying, topic.CreatedAt, topic.UpdatedAt));
@@ -209,6 +223,11 @@ public sealed class EnglishService(
     /// and reordering are all the same operation on the same small list, and splitting
     /// them into four endpoints would be four ways for a lesson to end up half-saved.</para>
     /// </summary>
+    /// <remarks>
+    /// ⚠️ Deliberately does NOT touch <see cref="EnglishTopic.Kind"/> either. A topic does
+    /// not change which list it lives in because somebody edited its text, and letting an
+    /// edit move it would hand the other list a topic it cannot draw.
+    /// </remarks>
     /// <remarks>
     /// ⚠️ Deliberately does NOT touch <see cref="EnglishTopic.Studying"/>. Fixing a typo in
     /// a lesson is not a statement about whether it is still being studied, and quietly
@@ -234,7 +253,7 @@ public sealed class EnglishService(
         topics.AddLines(lines);
 
         await uow.SaveChangesAsync(ct);
-        return new TopicDto(topic.Id, topic.Title, lines.Select(ToDto).ToList(),
+        return new TopicDto(topic.Id, topic.Title, topic.Kind, lines.Select(ToDto).ToList(),
             topic.CreatedAt, topic.UpdatedAt);
     }
 
@@ -258,7 +277,7 @@ public sealed class EnglishService(
         var counts = await topics.CountsAsync(ct);
         var c = counts.TryGetValue(topic.Id, out var n) ? n : (Lines: 0, Phrases: 0);
         return new TopicSummaryDto(
-            topic.Id, topic.Title, c.Lines, c.Phrases, topic.Studying,
+            topic.Id, topic.Title, topic.Kind, c.Lines, c.Phrases, topic.Studying,
             topic.CreatedAt, topic.UpdatedAt);
     }
 
@@ -286,8 +305,22 @@ public sealed class EnglishService(
         {
             EnglishLessonLine.Line => EnglishLessonLine.Line,
             EnglishLessonLine.Phrase => EnglishLessonLine.Phrase,
-            _ => throw new ValidationException("Loại dòng phải là 'line' hoặc 'phrase'."),
+            EnglishLessonLine.Para => EnglishLessonLine.Para,
+            _ => throw new ValidationException("Loại dòng phải là 'line', 'phrase' hoặc 'para'."),
         };
+
+    /// <summary>Which list a topic belongs to; anything unknown is refused, not guessed.</summary>
+    private static string TopicKind(string? raw)
+    {
+        var k = (raw ?? "").Trim().ToLowerInvariant();
+        if (k.Length == 0) return EnglishTopic.Lesson;
+        return k switch
+        {
+            EnglishTopic.Lesson => EnglishTopic.Lesson,
+            EnglishTopic.Translate => EnglishTopic.Translate,
+            _ => throw new ValidationException("Mục phải là 'lesson' hoặc 'translate'."),
+        };
+    }
 
     /// <summary>
     /// Turn what the client sent into rows, checking the shape as it goes.
@@ -320,6 +353,12 @@ public sealed class EnglishService(
             {
                 speaker = "";
             }
+
+            // Cả bài dịch đứng trên đúng dòng này: `vi` là đề, `en` là bản dịch. Thiếu
+            // `vi` thì bài còn mỗi bản tiếng Anh — không còn gì để dịch, mà nhìn vẫn như
+            // một bài hợp lệ.
+            if (kind == EnglishLessonLine.Para && (l.Vi ?? "").Trim().Length == 0)
+                throw new ValidationException("Đoạn văn phải có phần tiếng Việt để dịch.");
 
             rows.Add(new EnglishLessonLine
             {

@@ -44,6 +44,7 @@ public sealed class EnglishTopicConfiguration : IEntityTypeConfiguration<English
         e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
         e.Property(x => x.UserId).HasColumnName("user_id");
         e.Property(x => x.Title).HasColumnName("title");
+        e.Property(x => x.Kind).HasColumnName("kind");
         e.Property(x => x.Position).HasColumnName("position");
         e.Property(x => x.Studying).HasColumnName("studying");
         e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");

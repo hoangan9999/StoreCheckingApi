@@ -47,7 +47,7 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
         var id = await NewTopic(c);
 
         var t = await Json.Read(await c.GetAsync($"/api/english/topics/{id}"));
-        Json.HasExactly(t, "id", "title", "lines", "createdAt", "updatedAt");
+        Json.HasExactly(t, "id", "title", "kind", "lines", "createdAt", "updatedAt");
         Assert.Equal("How's work going?", t.GetProperty("title").GetString());
 
         var lines = t.GetProperty("lines");
@@ -111,7 +111,7 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
             Phrase("z", "3")));
 
         var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];
-        Json.HasExactly(row, "id", "title", "lineCount", "phraseCount", "studying", "createdAt", "updatedAt");
+        Json.HasExactly(row, "id", "title", "kind", "lineCount", "phraseCount", "studying", "createdAt", "updatedAt");
         Assert.Equal(2, row.GetProperty("lineCount").GetInt32());
         Assert.Equal(3, row.GetProperty("phraseCount").GetInt32());
     }
@@ -412,6 +412,153 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
 
         Assert.False((await InList(a, id)).GetProperty("studying").GetBoolean());
+    }
+
+    // ---------- Bài luyện dịch ----------
+
+    private static object Para(string vi, string en) =>
+        new { kind = "para", speaker = (string?)null, en, vi };
+
+    private static Task<HttpResponseMessage> ImportTranslate(HttpClient c, params object[] topics) =>
+        c.PostJson("/api/english/topics", new { topics, kind = "translate" });
+
+    /// <summary>Một bài dịch mẫu: đoạn văn rồi tới bảng từ gợi ý.</summary>
+    private static async Task<Guid> NewTranslate(HttpClient c, string title = "Thói quen thức khuya")
+    {
+        var body = await Json.Ok(await ImportTranslate(c, Topic(title,
+            Para("Suốt thời sinh viên, tôi có thói quen thức đến hai, ba giờ sáng.",
+                 "All through university I used to stay up until two or three in the morning."),
+            Phrase("stay up", "thức"),
+            Phrase("in fact", "thật ra"))));
+
+        return body[0].GetProperty("id").GetGuid();
+    }
+
+    [DbFact]
+    public async Task Luu_bai_dich_roi_mo_lai_thay_dung_hinh_dang()
+    {
+        var c = NewUser();
+        var id = await NewTranslate(c);
+
+        var t = await Json.Read(await c.GetAsync($"/api/english/topics/{id}"));
+        Assert.Equal("translate", t.GetProperty("kind").GetString());
+
+        var lines = t.GetProperty("lines");
+        Assert.Equal(3, lines.GetArrayLength());
+        Assert.Equal("para", lines[0].GetProperty("kind").GetString());
+        Assert.StartsWith("Suốt thời sinh viên", lines[0].GetProperty("vi").GetString());
+        Assert.StartsWith("All through university", lines[0].GetProperty("en").GetString());
+        Assert.Equal("phrase", lines[1].GetProperty("kind").GetString());
+    }
+
+    /// <summary>
+    /// ⚠️ Chốt chính: <b>hai mục KHÔNG được lẫn vào nhau</b>.
+    ///
+    /// <para>Bài hội thoại và bài dịch được vẽ ra màn hình theo hai cách khác hẳn nhau,
+    /// nên một chủ đề nằm nhầm mục thì hiện ra SAI chứ không phải hiện ra xấu.</para>
+    /// </summary>
+    [DbFact]
+    public async Task Hai_muc_khong_lan_vao_nhau()
+    {
+        var c = NewUser();
+        await NewTopic(c, "Bài hội thoại");
+        await NewTranslate(c, "Bài dịch");
+
+        var lessons = await Json.Read(await c.GetAsync("/api/english/topics?kind=lesson"));
+        Assert.Equal(["Bài hội thoại"],
+            lessons.EnumerateArray().Select(x => x.GetProperty("title").GetString()!).ToArray());
+
+        var translate = await Json.Read(await c.GetAsync("/api/english/topics?kind=translate"));
+        Assert.Equal(["Bài dịch"],
+            translate.EnumerateArray().Select(x => x.GetProperty("title").GetString()!).ToArray());
+    }
+
+    /// <summary>
+    /// Không ghi `kind` thì phải ra đúng những gì client cũ vẫn nhận — mục Bài học.
+    /// Mặc định thành "tất cả" là mục Bài học tự nhiên mọc thêm bài dịch mà không ai sửa gì.
+    /// </summary>
+    [DbFact]
+    public async Task Khong_ghi_muc_thi_mac_dinh_la_bai_hoc()
+    {
+        var c = NewUser();
+        await NewTopic(c, "Bài hội thoại");
+        await NewTranslate(c, "Bài dịch");
+
+        var list = await Json.Read(await c.GetAsync("/api/english/topics"));
+        Assert.Equal(["Bài hội thoại"],
+            list.EnumerateArray().Select(x => x.GetProperty("title").GetString()!).ToArray());
+
+        // Và dán vào mà không ghi mục thì cũng vào mục Bài học.
+        await Import(c, Topic("Dán trần", Line("teacher", "x", "y")));
+        var again = await Json.Read(await c.GetAsync("/api/english/topics"));
+        Assert.Equal(2, again.GetArrayLength());
+    }
+
+    /// <summary>
+    /// ⚠️ Cả bài dịch đứng trên phần tiếng Việt: đó là ĐỀ. Thiếu nó thì bài còn mỗi bản
+    /// tiếng Anh — không còn gì để dịch, mà nhìn vẫn như một bài hợp lệ.
+    /// </summary>
+    [DbFact]
+    public async Task Doan_van_khong_co_tieng_Viet_thi_400()
+    {
+        var res = await ImportTranslate(NewUser(), Topic("Thiếu đề",
+            Para("   ", "All through university I used to stay up late."),
+            Phrase("stay up", "thức")));
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [DbFact]
+    public async Task Muc_la_gi_do_khong_biet_thi_400()
+    {
+        var res = await NewUser().PostJson("/api/english/topics",
+            new { topics = new[] { Topic("X", Line("teacher", "a", "b")) }, kind = "linh tinh" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [DbFact]
+    public async Task Loai_dong_la_gi_do_khong_biet_thi_400()
+    {
+        var res = await ImportTranslate(NewUser(), Topic("X",
+            new { kind = "doan", speaker = (string?)null, en = "a", vi = "b" }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    /// <summary>
+    /// ⚠️ Sửa bài KHÔNG được làm nó đổi mục. Chủ đề không chuyển sang danh sách khác chỉ
+    /// vì ai đó sửa chữ trong nó, mà mục kia thì không vẽ nổi bài này.
+    /// </summary>
+    [DbFact]
+    public async Task Sua_bai_thi_muc_NAM_YEN()
+    {
+        var c = NewUser();
+        var id = await NewTranslate(c);
+
+        var res = await c.PutJson($"/api/english/topics/{id}", new
+        {
+            title = "Tên mới",
+            lines = new[] { Para("Đề mới.", "A new passage.") },
+        });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal("translate", (await Json.Read(res)).GetProperty("kind").GetString());
+
+        var list = await Json.Read(await c.GetAsync("/api/english/topics?kind=translate"));
+        Assert.Equal(1, list.GetArrayLength());
+        Assert.Equal("Tên mới", list[0].GetProperty("title").GetString());
+    }
+
+    [DbFact]
+    public async Task Bai_dich_cung_danh_dau_dang_hoc_duoc()
+    {
+        var c = NewUser();
+        var id = await NewTranslate(c);
+
+        await c.PutJson($"/api/english/topics/{id}/studying", new { studying = true });
+
+        var list = await Json.Read(await c.GetAsync("/api/english/topics?kind=translate"));
+        Assert.True(list[0].GetProperty("studying").GetBoolean());
     }
 
     [DbFact]
