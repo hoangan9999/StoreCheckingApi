@@ -111,7 +111,8 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
             Phrase("z", "3")));
 
         var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];
-        Json.HasExactly(row, "id", "title", "kind", "lineCount", "phraseCount", "studying", "createdAt", "updatedAt");
+        Json.HasExactly(row, "id", "title", "kind", "lineCount", "phraseCount", "studying",
+            "categoryId", "createdAt", "updatedAt");
         Assert.Equal(2, row.GetProperty("lineCount").GetInt32());
         Assert.Equal(3, row.GetProperty("phraseCount").GetInt32());
     }
@@ -559,6 +560,222 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
 
         var list = await Json.Read(await c.GetAsync("/api/english/topics?kind=translate"));
         Assert.True(list[0].GetProperty("studying").GetBoolean());
+    }
+
+
+    // ---------- Phân loại chủ đề ----------
+
+    private static async Task<Guid> NewCategory(HttpClient c, string name) =>
+        (await Json.Ok(await c.PostJson("/api/english/categories", new { name })))
+            .GetProperty("id").GetGuid();
+
+    private static Task<HttpResponseMessage> FileUnder(HttpClient c, Guid topic, Guid? category) =>
+        c.PutJson($"/api/english/topics/{topic}/category", new { categoryId = category });
+
+    [DbFact]
+    public async Task Them_loai_roi_doc_lai_thay_dung_hinh_dang()
+    {
+        var c = NewUser();
+
+        var made = await Json.Ok(
+            await c.PostJson("/api/english/categories", new { name = "  Công việc  " }));
+        Json.HasExactly(made, "id", "name", "createdAt");
+        Assert.Equal("Công việc", made.GetProperty("name").GetString());
+
+        var list = await Json.Read(await c.GetAsync("/api/english/categories"));
+        Assert.Equal(1, list.GetArrayLength());
+        Assert.Equal("Công việc", list[0].GetProperty("name").GetString());
+    }
+
+    /// <summary>
+    /// ⚠️ Hai loại cùng tên là lỗi gõ, không phải loại mới — ô chọn sẽ có hai dòng
+    /// giống hệt nhau mà không cách nào biết bài nào đi đâu. Đây là phép so chuỗi DUY NHẤT
+    /// trong cả tính năng, và nó chỉ chạy đúng lúc tạo.
+    /// </summary>
+    [DbFact]
+    public async Task Trung_ten_loai_thi_tu_choi_du_lech_hoa_thuong_va_khoang_trang()
+    {
+        var c = NewUser();
+        await NewCategory(c, "Công việc");
+
+        var res = await c.PostJson("/api/english/categories", new { name = "  CÔNG VIỆC " });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+
+        var list = await Json.Read(await c.GetAsync("/api/english/categories"));
+        Assert.Equal(1, list.GetArrayLength());
+    }
+
+    [DbFact]
+    public async Task Loai_phai_co_ten()
+    {
+        var c = NewUser();
+
+        var res = await c.PostJson("/api/english/categories", new { name = "   " });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    /// <summary>
+    /// Đây là lý do loại là một BẢNG chứ không phải một chuỗi nằm trên từng chủ đề: chủ đề
+    /// giữ <c>id</c> nên đổi tên loại là UPDATE một dòng, không phải sửa từng bài rồi sót một cái.
+    /// </summary>
+    [DbFact]
+    public async Task Doi_ten_loai_thi_bai_van_thuoc_dung_loai_do()
+    {
+        var c = NewUser();
+        var cat = await NewCategory(c, "Công việc");
+        var id = await NewTopic(c);
+        await FileUnder(c, id, cat);
+
+        var renamed = await Json.Ok(
+            await c.PutJson($"/api/english/categories/{cat}", new { name = "Đi làm" }));
+        Assert.Equal("Đi làm", renamed.GetProperty("name").GetString());
+
+        var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];
+        Assert.Equal(cat, row.GetProperty("categoryId").GetGuid());
+    }
+
+    /// <summary>
+    /// Phép kiểm trùng tên phải BỎ QUA chính nó, nếu không thì sửa hoa thường của một
+    /// loại ("Công Việc" → "Công việc") bị báo là trùng với chính nó và không sửa được.
+    /// </summary>
+    [DbFact]
+    public async Task Doi_hoa_thuong_cua_chinh_no_thi_van_luu_duoc()
+    {
+        var c = NewUser();
+        var cat = await NewCategory(c, "Công Việc");
+
+        var fixedUp = await Json.Ok(
+            await c.PutJson($"/api/english/categories/{cat}", new { name = "Công việc" }));
+        Assert.Equal("Công việc", fixedUp.GetProperty("name").GetString());
+    }
+
+    /// <summary>
+    /// ⚠️ Xoá cái nhãn không phải xoá bài. <c>cascade</c> ở đây là một nút "xoá hết bài
+    /// trong nhóm" nằm ngay cạnh nút Đổi tên, không có gì báo trước.
+    /// </summary>
+    [DbFact]
+    public async Task Xoa_loai_thi_bai_O_LAI_va_ve_chua_phan_loai()
+    {
+        var c = NewUser();
+        var cat = await NewCategory(c, "Công việc");
+        var id = await NewTopic(c);
+        await FileUnder(c, id, cat);
+
+        var gone = await c.DeleteAsync($"/api/english/categories/{cat}");
+        Assert.Equal(HttpStatusCode.NoContent, gone.StatusCode);
+
+        var list = await Json.Read(await c.GetAsync("/api/english/topics"));
+        Assert.Equal(1, list.GetArrayLength());
+        Assert.Equal(id, list[0].GetProperty("id").GetGuid());
+        Assert.Equal(JsonValueKind.Null, list[0].GetProperty("categoryId").ValueKind);
+    }
+
+    /// <summary>
+    /// ⚠️ Cột <c>updatedAt</c> nghĩa là "bài đã bị sửa", và đó cũng là ngày danh sách
+    /// hiện ra. Xếp một bài vào mục thì không sửa gì trong bài cả.
+    /// </summary>
+    [DbFact]
+    public async Task Xep_vao_loai_thi_khong_doi_updatedAt()
+    {
+        var c = NewUser();
+        var cat = await NewCategory(c, "Công việc");
+        var id = await NewTopic(c);
+
+        var before = (await Json.Read(await c.GetAsync("/api/english/topics")))[0]
+            .GetProperty("updatedAt").GetDateTimeOffset();
+
+        await FileUnder(c, id, cat);
+
+        var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];
+        Assert.Equal(before, row.GetProperty("updatedAt").GetDateTimeOffset());
+        Assert.Equal(cat, row.GetProperty("categoryId").GetGuid());
+    }
+
+    /// <summary>
+    /// ⚠️ Sửa một lỗi chính tả không phải tuyên bố bài này không thuộc mục nào nữa — cùng
+    /// lý do với dấu "đang học". Đó là vì sao phân loại có endpoint riêng.
+    /// </summary>
+    [DbFact]
+    public async Task Sua_bai_thi_KHONG_bo_phan_loai()
+    {
+        var c = NewUser();
+        var cat = await NewCategory(c, "Công việc");
+        var id = await NewTopic(c);
+        await FileUnder(c, id, cat);
+
+        await c.PutJson($"/api/english/topics/{id}", new
+        {
+            title = "Tên mới",
+            lines = new[] { Line("teacher", "Hello.", "Xin chào.") },
+        });
+
+        var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];
+        Assert.Equal("Tên mới", row.GetProperty("title").GetString());
+        Assert.Equal(cat, row.GetProperty("categoryId").GetGuid());
+    }
+
+    [DbFact]
+    public async Task Bo_phan_loai_bang_null()
+    {
+        var c = NewUser();
+        var cat = await NewCategory(c, "Công việc");
+        var id = await NewTopic(c);
+        await FileUnder(c, id, cat);
+
+        var back = await Json.Ok(await FileUnder(c, id, null));
+        Assert.Equal(JsonValueKind.Null, back.GetProperty("categoryId").ValueKind);
+    }
+
+    /// <summary>
+    /// ⚠️ Loại của người khác phải bị TỪ CHỐI chứ không phải lưu lặng lẽ: lưu được thì
+    /// trong database bài mang một id không tra ra được, còn trên màn hình nó đọc là "chưa phân
+    /// loại" — hai thứ nói ngược nhau mà không có gì báo.
+    /// </summary>
+    [DbFact]
+    public async Task Loai_cua_nguoi_khac_thi_tu_choi()
+    {
+        var mine = NewUser();
+        var other = NewUser();
+        var theirs = await NewCategory(other, "Của người khác");
+        var id = await NewTopic(mine);
+
+        var res = await FileUnder(mine, id, theirs);
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+
+        var row = (await Json.Read(await mine.GetAsync("/api/english/topics")))[0];
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("categoryId").ValueKind);
+    }
+
+    /// <summary>
+    /// Một danh sách loại dùng chung cho cả hai mục: loại nói về nội dung ("Du lịch"), không
+    /// nói về kiểu bài. Tách đôi thì cùng một loại phải tạo hai lần rồi hai bên trôi khác nhau.
+    /// </summary>
+    [DbFact]
+    public async Task Mot_danh_sach_loai_dung_chung_cho_ca_hai_muc()
+    {
+        var c = NewUser();
+        var cat = await NewCategory(c, "Du lịch");
+        var lesson = await NewTopic(c);
+        var translate = await NewTranslate(c);
+
+        Assert.Equal(HttpStatusCode.OK, (await FileUnder(c, lesson, cat)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await FileUnder(c, translate, cat)).StatusCode);
+
+        var lessons = await Json.Read(await c.GetAsync("/api/english/topics?kind=lesson"));
+        var dich = await Json.Read(await c.GetAsync("/api/english/topics?kind=translate"));
+        Assert.Equal(cat, lessons[0].GetProperty("categoryId").GetGuid());
+        Assert.Equal(cat, dich[0].GetProperty("categoryId").GetGuid());
+    }
+
+    [DbFact]
+    public async Task Khong_thay_loai_cua_nguoi_khac()
+    {
+        var mine = NewUser();
+        var other = NewUser();
+        await NewCategory(other, "Của người khác");
+
+        var list = await Json.Read(await mine.GetAsync("/api/english/categories"));
+        Assert.Equal(0, list.GetArrayLength());
     }
 
     [DbFact]

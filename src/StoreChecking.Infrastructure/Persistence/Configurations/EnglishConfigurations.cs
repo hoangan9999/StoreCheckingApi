@@ -35,6 +35,20 @@ public sealed class SavedSentenceConfiguration : IEntityTypeConfiguration<SavedS
     }
 }
 
+public sealed class EnglishCategoryConfiguration : IEntityTypeConfiguration<EnglishCategory>
+{
+    public void Configure(EntityTypeBuilder<EnglishCategory> e)
+    {
+        e.ToTable("english_categories");
+        e.HasKey(x => x.Id);
+        e.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+        e.Property(x => x.UserId).HasColumnName("user_id");
+        e.Property(x => x.Name).HasColumnName("name");
+        e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+        e.HasIndex(x => new { x.UserId, x.CreatedAt });
+    }
+}
+
 public sealed class EnglishTopicConfiguration : IEntityTypeConfiguration<EnglishTopic>
 {
     public void Configure(EntityTypeBuilder<EnglishTopic> e)
@@ -47,9 +61,17 @@ public sealed class EnglishTopicConfiguration : IEntityTypeConfiguration<English
         e.Property(x => x.Kind).HasColumnName("kind");
         e.Property(x => x.Position).HasColumnName("position");
         e.Property(x => x.Studying).HasColumnName("studying");
+        e.Property(x => x.CategoryId).HasColumnName("category_id");
         e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
         e.HasIndex(x => new { x.UserId, x.Position });
+
+        // Khai quan hệ để EF biết thứ tự ghi — cùng lý do với `topic_id` ở dòng bài, chỉ
+        // khác là ở đây xoá loại thì chủ đề Ở LẠI, chỉ mất nhãn.
+        e.HasOne<EnglishCategory>()
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }
 

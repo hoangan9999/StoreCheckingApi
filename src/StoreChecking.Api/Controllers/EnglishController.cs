@@ -105,8 +105,44 @@ public sealed class EnglishController(EnglishService english) : ControllerBase
         Guid id, [FromBody] SetStudyingRequest body, CancellationToken ct) =>
         await english.SetStudyingAsync(id, body, ct) is { } t ? Ok(t) : NotFound();
 
+    /// <summary>Xếp một chủ đề vào một loại, hoặc bỏ ra khỏi mọi loại (<c>null</c>).</summary>
+    /// <remarks>
+    /// Endpoint riêng, cùng lý do với <c>studying</c>: chọn loại không nên đòi cầm sẵn
+    /// toàn bộ nội dung bài, và lưu bài sau khi sửa cũng không được phép bỏ phân loại chỉ
+    /// vì thiếu trường đó. Không đụng vào <c>updatedAt</c> — xếp vào một mục thì không
+    /// sửa gì trong bài cả.
+    /// </remarks>
+    [HttpPut("topics/{id:guid}/category")]
+    public async Task<IActionResult> SetCategory(
+        Guid id, [FromBody] SetTopicCategoryRequest body, CancellationToken ct) =>
+        await english.SetCategoryAsync(id, body, ct) is { } t ? Ok(t) : NotFound();
+
     /// <summary>Xoá một chủ đề. Mọi dòng trong đó đi theo.</summary>
     [HttpDelete("topics/{id:guid}")]
     public async Task<IActionResult> DeleteTopic(Guid id, CancellationToken ct) =>
         await english.DeleteTopicAsync(id, ct) ? NoContent() : NotFound();
+
+    // ---------- Loại chủ đề ----------
+
+    /// <summary>Danh sách loại. Dùng chung cho cả mục Bài học lẫn mục Luyện dịch.</summary>
+    [HttpGet("categories")]
+    public async Task<IActionResult> ListCategories(CancellationToken ct) =>
+        Ok(await english.ListCategoriesAsync(ct));
+
+    /// <summary>Thêm một loại. Trùng tên (bỏ qua hoa thường và khoảng trắng) thì từ chối.</summary>
+    [HttpPost("categories")]
+    public async Task<IActionResult> AddCategory(
+        [FromBody] SaveCategoryRequest body, CancellationToken ct) =>
+        Ok(await english.AddCategoryAsync(body, ct));
+
+    /// <summary>Đổi tên một loại. Mọi chủ đề thuộc loại đó theo liền vì chúng giữ id.</summary>
+    [HttpPut("categories/{id:guid}")]
+    public async Task<IActionResult> RenameCategory(
+        Guid id, [FromBody] SaveCategoryRequest body, CancellationToken ct) =>
+        await english.RenameCategoryAsync(id, body, ct) is { } c ? Ok(c) : NotFound();
+
+    /// <summary>Xoá một loại. Chủ đề thuộc loại đó Ở LẠI, chỉ rơi về "chưa phân loại".</summary>
+    [HttpDelete("categories/{id:guid}")]
+    public async Task<IActionResult> DeleteCategory(Guid id, CancellationToken ct) =>
+        await english.DeleteCategoryAsync(id, ct) ? NoContent() : NotFound();
 }

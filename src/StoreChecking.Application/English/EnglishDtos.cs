@@ -30,9 +30,14 @@ public record LessonLineDto(Guid Id, string Kind, string Speaker, string En, str
 public record SaveLessonLine(string Kind, string? Speaker, string En, string? Vi);
 
 /// <summary>A topic in the list — without its lines, which the list never shows.</summary>
+/// <param name="CategoryId">
+/// Which category it is filed under, or <c>null</c> for "chưa phân loại".
+/// <para>The id, not the name: the client already holds the category list, and sending
+/// the text would be a second copy of it that goes stale the moment one is renamed.</para>
+/// </param>
 public record TopicSummaryDto(
     Guid Id, string Title, string Kind, int LineCount, int PhraseCount, bool Studying,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    Guid? CategoryId, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 /// <summary>A topic opened: its title and every row of it, in order.</summary>
 public record TopicDto(
@@ -62,3 +67,18 @@ public record ImportTopicsRequest(IReadOnlyList<SaveTopicRequest>? Topics, strin
 /// lesson must not be able to clear the mark by leaving the field out.</para>
 /// </summary>
 public record SetStudyingRequest(bool Studying);
+
+/// <summary>One label topics can be filed under.</summary>
+public record CategoryDto(Guid Id, string Name, DateTimeOffset CreatedAt);
+
+/// <summary>A category being created, or renamed.</summary>
+public record SaveCategoryRequest(string? Name);
+
+/// <summary>
+/// File one topic under a category, or take it out of every category.
+/// <para><c>null</c> means "chưa phân loại" and is a normal value, not a missing one —
+/// which is why this is its own endpoint rather than a field on
+/// <see cref="SaveTopicRequest"/>: there, leaving it out and clearing it would look
+/// identical, and every save of an edited lesson would quietly unfile it.</para>
+/// </summary>
+public record SetTopicCategoryRequest(Guid? CategoryId);

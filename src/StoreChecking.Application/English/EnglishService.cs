@@ -12,6 +12,7 @@ public sealed class EnglishService(
     IEnglishWordRepository words,
     ISavedSentenceRepository sentences,
     IEnglishTopicRepository topics,
+    IEnglishCategoryRepository categories,
     ICurrentUser user,
     IUnitOfWork uow)
 {
@@ -152,7 +153,8 @@ public sealed class EnglishService(
         {
             var c = counts.TryGetValue(t.Id, out var n) ? n : (Lines: 0, Phrases: 0);
             return new TopicSummaryDto(
-                t.Id, t.Title, t.Kind, c.Lines, c.Phrases, t.Studying, t.CreatedAt, t.UpdatedAt);
+                t.Id, t.Title, t.Kind, c.Lines, c.Phrases, t.Studying, t.CategoryId,
+                t.CreatedAt, t.UpdatedAt);
         }).ToList();
     }
 
@@ -210,7 +212,7 @@ public sealed class EnglishService(
                 topic.Id, topic.Title, topic.Kind,
                 lines.Count(l => l.Kind == EnglishLessonLine.Line),
                 lines.Count(l => l.Kind == EnglishLessonLine.Phrase),
-                topic.Studying, topic.CreatedAt, topic.UpdatedAt));
+                topic.Studying, topic.CategoryId, topic.CreatedAt, topic.UpdatedAt));
         }
 
         await uow.SaveChangesAsync(ct);
@@ -274,11 +276,129 @@ public sealed class EnglishService(
         topic.Studying = body.Studying;
         await uow.SaveChangesAsync(ct);
 
+        return await SummaryAsync(topic, ct);
+    }
+
+    // ---------- Phân loại chủ đề ----------
+
+    /// <summary>
+    /// Every category the user has made. One list shared by both lists of topics — see
+    /// <see cref="EnglishCategory"/> for why it is not split per kind.
+    /// </summary>
+    public async Task<IReadOnlyList<CategoryDto>> ListCategoriesAsync(CancellationToken ct = default) =>
+        (await categories.ListAsync(ct))
+            .Select(c => new CategoryDto(c.Id, c.Name, c.CreatedAt)).ToList();
+
+    /// <summary>
+    /// Make a new category.
+    /// <para>Refuses a name already in use, ignoring case and surrounding spaces. That is
+    /// the <b>only</b> place in this feature where a category is matched by its text, and
+    /// it exists precisely so that nothing else ever has to: two rows both called
+    /// "Công việc" would leave the user choosing between identical entries in a dropdown
+    /// with no way to tell which topics went where.</para>
+    /// </summary>
+    public async Task<CategoryDto> AddCategoryAsync(
+        SaveCategoryRequest body, CancellationToken ct = default)
+    {
+        var name = CategoryName(body.Name);
+        if (await categories.FindByNameAsync(name, null, ct) is { } dup)
+            throw new ValidationException($"Đã có loại tên {dup.Name}.");
+
+        var row = new EnglishCategory
+        {
+            UserId = user.Id,
+            Name = name,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        categories.Add(row);
+        await uow.SaveChangesAsync(ct);
+
+        return new CategoryDto(row.Id, row.Name, row.CreatedAt);
+    }
+
+    /// <summary>
+    /// Rename a category. Every topic filed under it follows, because topics hold the id
+    /// and not the text — that is the whole point of the table existing.
+    /// </summary>
+    /// <returns><c>null</c> when the current user has no category with that id.</returns>
+    public async Task<CategoryDto?> RenameCategoryAsync(
+        Guid id, SaveCategoryRequest body, CancellationToken ct = default)
+    {
+        var row = await categories.FindAsync(id, ct);
+        if (row is null) return null;
+
+        var name = CategoryName(body.Name);
+        // `id` is excluded so that re-saving a category under its own name, or changing
+        // only its capitalisation, is not reported as a clash with itself.
+        if (await categories.FindByNameAsync(name, id, ct) is { } dup)
+            throw new ValidationException($"Đã có loại tên {dup.Name}.");
+
+        row.Name = name;
+        await uow.SaveChangesAsync(ct);
+
+        return new CategoryDto(row.Id, row.Name, row.CreatedAt);
+    }
+
+    /// <summary>
+    /// Delete a category.
+    /// <para>⚠️ The topics filed under it <b>stay</b>, and fall back to "chưa phân
+    /// loại" (<c>on delete set null</c> in db/025). Deleting a label is not deleting the
+    /// lessons wearing it, and a cascade here would be a "delete every lesson in this
+    /// group" button sitting next to Rename with nothing to warn anybody.</para>
+    /// </summary>
+    /// <returns><c>false</c> when no such category belongs to the current user.</returns>
+    public async Task<bool> DeleteCategoryAsync(Guid id, CancellationToken ct = default)
+    {
+        var row = await categories.FindAsync(id, ct);
+        if (row is null) return false;
+
+        categories.Remove(row);
+        await uow.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>
+    /// File one topic under a category, or take it out of every category with <c>null</c>.
+    /// <para>Its own endpoint for the same reason as <see cref="SetStudyingAsync"/>:
+    /// picking a category must not need the lesson's whole contents in hand, and saving
+    /// an edited lesson must not be able to unfile it.</para>
+    /// <para><c>UpdatedAt</c> is left alone — the column means "the lesson was edited",
+    /// and filing it under a heading edits nothing.</para>
+    /// </summary>
+    /// <returns><c>null</c> when the current user has no topic with that id.</returns>
+    public async Task<TopicSummaryDto?> SetCategoryAsync(
+        Guid id, SetTopicCategoryRequest body, CancellationToken ct = default)
+    {
+        var topic = await topics.FindAsync(id, ct);
+        if (topic is null) return null;
+
+        // Refused rather than stored: the query filter means another user's category id
+        // is simply not found here, so letting it through would write a dangling id that
+        // reads as "chưa phân loại" on screen while the database says otherwise.
+        if (body.CategoryId is { } wanted && await categories.FindAsync(wanted, ct) is null)
+            throw new ValidationException("Không có loại đó.");
+
+        topic.CategoryId = body.CategoryId;
+        await uow.SaveChangesAsync(ct);
+
+        return await SummaryAsync(topic, ct);
+    }
+
+    private static string CategoryName(string? raw)
+    {
+        var n = (raw ?? "").Trim();
+        if (n.Length == 0) throw new ValidationException("Loại phải có tên.");
+        return n;
+    }
+
+    /// <summary>The list row for one topic, so the client need not reload the whole list.</summary>
+    private async Task<TopicSummaryDto> SummaryAsync(EnglishTopic topic, CancellationToken ct)
+    {
         var counts = await topics.CountsAsync(ct);
         var c = counts.TryGetValue(topic.Id, out var n) ? n : (Lines: 0, Phrases: 0);
         return new TopicSummaryDto(
             topic.Id, topic.Title, topic.Kind, c.Lines, c.Phrases, topic.Studying,
-            topic.CreatedAt, topic.UpdatedAt);
+            topic.CategoryId, topic.CreatedAt, topic.UpdatedAt);
     }
 
     /// <returns><c>false</c> when no such topic belongs to the current user.</returns>

@@ -40,6 +40,28 @@ public interface ISavedSentenceRepository
 }
 
 /// <summary>
+/// The labels topics are filed under.
+/// <para>Looking one up is always by id. The one lookup by text, <see cref="FindByNameAsync"/>,
+/// exists solely to stop a second "Công việc" being created and is called nowhere else —
+/// see db/025 for why that limit matters.</para>
+/// </summary>
+public interface IEnglishCategoryRepository
+{
+    Task<IReadOnlyList<EnglishCategory>> ListAsync(CancellationToken ct = default);
+    Task<EnglishCategory?> FindAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// A category of the current user whose name matches, ignoring case and surrounding
+    /// spaces. Only for refusing a duplicate at creation time.
+    /// </summary>
+    /// <param name="except">A category to skip — the one being renamed.</param>
+    Task<EnglishCategory?> FindByNameAsync(string name, Guid? except = null, CancellationToken ct = default);
+
+    void Add(EnglishCategory row);
+    void Remove(EnglishCategory row);
+}
+
+/// <summary>
 /// Lessons kept by topic.
 /// <para>A topic and its lines always move together — read together, replaced together,
 /// deleted together — so one repository owns both rather than two that must be kept in

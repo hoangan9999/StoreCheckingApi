@@ -3,6 +3,28 @@ using StoreChecking.Domain.Abstractions;
 namespace StoreChecking.Domain.Entities;
 
 /// <summary>
+/// A label the user groups topics under: "Công việc", "Du lịch", "Giao tiếp hàng ngày".
+/// <para><see cref="Id"/> is the identity; <see cref="Name"/> is only what gets shown and
+/// may be renamed freely. Same reasoning as <see cref="ProductKind"/>: a category held as
+/// text on each topic means one typo silently makes a second category, and one rename has
+/// to be applied to every topic that carries the old spelling.</para>
+/// <para>One list shared by both <see cref="EnglishTopic.Lesson"/> and
+/// <see cref="EnglishTopic.Translate"/>. A category describes subject matter, not the
+/// exercise format, so splitting it per list would mean creating "Du lịch" twice and
+/// letting the two drift apart.</para>
+/// </summary>
+public class EnglishCategory : IOwnedByUser
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+
+    /// <summary>Display text. NOT the identity — never look a category up by this.</summary>
+    public string Name { get; set; } = "";
+
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>
 /// One lesson: a titled conversation plus the phrases worth keeping from it.
 /// <para>The content is written elsewhere — an AI conversation — and pasted in whole. What
 /// gets stored is the PARSED result, two columns apart, because that is the only part with
@@ -46,6 +68,17 @@ public class EnglishTopic : IOwnedByUser
     /// normal and a single field would silently clear the first one.</para>
     /// </summary>
     public bool Studying { get; set; }
+
+    /// <summary>
+    /// Which <see cref="EnglishCategory"/> this topic is filed under; <c>null</c> means
+    /// not filed yet.
+    /// <para><c>null</c> is a normal state, not a gap to be filled in: every topic that
+    /// existed before categories did starts there, and a freshly pasted lesson has not
+    /// been looked at yet. The list shows those under "Chưa phân loại".</para>
+    /// <para>Deleting a category sets this back to <c>null</c> (<c>on delete set null</c>
+    /// in db/025) — removing a label must never remove the lessons wearing it.</para>
+    /// </summary>
+    public Guid? CategoryId { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

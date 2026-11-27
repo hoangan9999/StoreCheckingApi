@@ -59,6 +59,30 @@ public sealed class SavedSentenceRepository(AppDbContext db) : ISavedSentenceRep
     public void Remove(SavedSentence row) => db.SavedSentences.Remove(row);
 }
 
+public sealed class EnglishCategoryRepository(AppDbContext db) : IEnglishCategoryRepository
+{
+    // Oldest first: the list is a handful of rows the user made themselves, and a stable
+    // order means the dropdown does not reshuffle under the finger every time one is added.
+    public async Task<IReadOnlyList<EnglishCategory>> ListAsync(CancellationToken ct = default) =>
+        await db.EnglishCategories.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).ToListAsync(ct);
+
+    public Task<EnglishCategory?> FindAsync(Guid id, CancellationToken ct = default) =>
+        db.EnglishCategories.FirstOrDefaultAsync(x => x.Id == id, ct);
+
+    // Matches the unique index in db/025 — lower(btrim(name)) — so the check here and the
+    // one the database enforces cannot disagree about what counts as the same name.
+    public Task<EnglishCategory?> FindByNameAsync(
+        string name, Guid? except = null, CancellationToken ct = default)
+    {
+        var key = name.Trim().ToLowerInvariant();
+        return db.EnglishCategories.FirstOrDefaultAsync(
+            x => x.Name.Trim().ToLower() == key && (except == null || x.Id != except), ct);
+    }
+
+    public void Add(EnglishCategory row) => db.EnglishCategories.Add(row);
+    public void Remove(EnglishCategory row) => db.EnglishCategories.Remove(row);
+}
+
 public sealed class EnglishTopicRepository(AppDbContext db) : IEnglishTopicRepository
 {
     // Position first, then newest: a topic nobody has reordered keeps position 0 alongside
