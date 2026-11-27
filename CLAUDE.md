@@ -971,6 +971,47 @@ chặn được một lỗi lẽ ra làm sập production.
 giữ. Nạp lần đầu `db/018` chạy trên bản sao `pg_dump` của database thật: 8 tên thô → 7 mặt
 hàng, 0 dòng thiếu `kind_id`, chạy lại lần hai không sinh thêm.
 
+## Phân loại chủ đề tiếng Anh — 2026-11-27
+
+`db/025` thêm bảng `english_categories` và cột `english_topics.category_id`. Endpoint:
+`GET/POST/PUT/DELETE /api/english/categories` và `PUT /api/english/topics/{id}/category`.
+
+**Bảng riêng, không phải một cột text trên chủ đề** — đúng bài học đã rút ra ở `db/018` với
+`product_kinds`: `id` là danh tính, `name` chỉ là chữ hiện ra. Để loại là chuỗi thì gõ lệch
+một chữ là sinh loại mới mà không có gì báo (`'Basic'` / `'Basic '` đã gặp thật), và đổi tên
+phải sửa từng chủ đề.
+
+⚠️ **Chỉ còn đúng một phép so chuỗi**: unique index `(user_id, lower(btrim(name)))`, chỉ
+chạy lúc tạo để khỏi sinh hai "Công việc". `FindByNameAsync` không được gọi ở chỗ nào khác.
+Lúc đổi tên nó bỏ qua chính dòng đang sửa, không thì sửa hoa thường của một loại bị báo
+là trùng với chính nó.
+
+**Một danh sách dùng chung cho cả `kind='lesson'` lẫn `kind='translate'`**: loại nói về nội
+dung, không nói về kiểu bài.
+
+### Bốn chốt
+
+- ⚠️ **`on delete set null`, KHÔNG phải cascade.** Xoá cái nhãn không phải xoá bài;
+  cascade ở đây là một nút "xoá hết bài trong nhóm" nằm ngay cạnh nút Đổi tên.
+- ⚠️ **`SetCategoryAsync` không đụng `UpdatedAt`** — cột đó nghĩa là "bài đã bị sửa" và là
+  ngày danh sách hiện ra. Giống hệt `SetStudyingAsync`.
+- ⚠️ **`SaveTopicAsync` không đụng `CategoryId`**, nên phân loại có endpoint riêng. Để
+  trong `SaveTopicRequest` thì "không gửi trường đó" và "bỏ phân loại" trông y hệt nhau.
+- ⚠️ **Loại của người khác bị từ chối** chứ không lưu lặng lẽ. Query filter làm `FindAsync`
+  không thấy nó, mà lưu được thì database giữ một id không tra ra được trong khi màn hình
+  đọc là "chưa phân loại".
+
+### Muốn thử phá `db/025` thì phải reset database test
+
+Mutation test trên một file migration **không chỉ là sửa file rồi chạy lại**: `schema_history`
+đã giữ checksum của bản đã áp dụng, nên trả file về cũ là SchemaMigrator từ chối khởi động
+và **mọi test DB đỏ vì một lý do không liên quan**. Phải drop/create lại `storechecking_test`
+trước mỗi lần chạy. Đã mất một vòng vì đúng chuyện này.
+
+**Đo thật:** 232/232 contract test (thêm 12). Sáu chốt đã thử phá, mỗi cái đúng một test đỏ và
+đúng cái test giữ nó: cascade, trùng tên, `UpdatedAt`, lưu-bài-không-bỏ-loại, loại-người-khác,
+và bỏ-qua-chính-nó-lúc-đổi-tên.
+
 ## Việc chưa xong, không thuộc giai đoạn nào
 
 - [ ] **Lỗi JWT "issued at future"** bên Supabase vẫn chưa tìm ra nguyên nhân. API .NET
