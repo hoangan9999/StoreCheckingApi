@@ -1040,6 +1040,26 @@ chặn khối rỗng, và chuẩn hoá `speaker` về rỗng cho loại không p
 chuẩn hoá `speaker` về rỗng trước khi ghi nên CHECK không bao giờ thấy giá trị xấu. Nó là lưới
 thứ hai, không phải lưới đầu — thứ được test là phép chuẩn hoá ở `BuildLines`.
 
+## Bài phỏng vấn, bản format thứ hai — 2026-11-27
+
+`db/027` thêm loại dòng `'code'`. Định dạng dán vào đổi hai chỗ so với bản ở `db/026`:
+
+- **Đoạn code đứng riêng**, ngay trước khối giải thích, thay vì nằm bên trong nó.
+- **Khối giải thích là một cặp Anh–Việt**, nên dòng `note` dùng cả `en` lẫn `vi`. Không cần
+  đổi gì trong database — hai cột vốn đã có.
+
+⚠️ **Phép kiểm của `note` nới từ "phải có `vi`" thành "ít nhất một trong hai nửa có chữ".**
+Đòi đủ cả hai thì bài dán theo bản đầu — giải thích chỉ có tiếng Việt — không sửa được nữa.
+
+⚠️ **`Vi` của dòng `code` giữ TÊN NGÔN NGỮ ("csharp")**, chỗ duy nhất trong bảng mà cột đó
+không mang tiếng Việt. `En` giữ nguyên văn code, chỉ `Trim()` hai đầu.
+
+⚠️ Nới **CẢ HAI** ràng buộc, lần thứ ba liên tiếp (db/024 với 'para', db/026 với
+'level'/'note'). CASE không khớp nhánh nào thì trả NULL, mà CHECK gặp NULL là coi như đạt.
+
+**Đo thật:** 245/245 contract test (thêm 6). Bốn chốt đã thử phá; riêng "một nửa là đủ" làm
+đỏ 6 test khi siết lại thành "đủ cả hai".
+
 ## Việc chưa xong, không thuộc giai đoạn nào
 
 - [ ] **Lỗi JWT "issued at future"** bên Supabase vẫn chưa tìm ra nguyên nhân. API .NET

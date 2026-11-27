@@ -856,8 +856,8 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
     }
 
     /// <summary>
-    /// ⚠️ Khối giải thích rỗng trơn là một ô trống trên màn hình, không phân biệt được với
-    /// một lần tách đã lặng lẽ làm mất chữ.
+    /// ⚠️ Khối giải thích rỗng CẢ HAI NỬA là một ô trống trên màn hình, không phân biệt được
+    /// với một lần tách đã lặng lẽ làm mất chữ.
     /// </summary>
     [DbFact]
     public async Task Khoi_giai_thich_rong_thi_tu_choi()
@@ -909,6 +909,114 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
             Level("Junior"),
             Line("teacher", "A", "a"),
             Note("Giải thích."),
+            Phrase("x", "1")));
+
+        var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];
+        Assert.Equal(1, row.GetProperty("lineCount").GetInt32());
+        Assert.Equal(1, row.GetProperty("phraseCount").GetInt32());
+    }
+
+
+    // ---------- Format thứ hai: giải thích song ngữ và đoạn code ----------
+
+    private static object CodeLine(string en, string lang = "csharp") =>
+        new { kind = "code", speaker = (string?)null, en, vi = lang };
+
+    private static object Note2(string en, string vi) =>
+        new { kind = "note", speaker = (string?)null, en, vi };
+
+    private const string Snippet =
+        "int x = 42;\nobject o = x;      // boxing\n\nvar list = new List<int>();";
+
+    [DbFact]
+    public async Task Doan_code_luu_duoc_va_giu_nguyen_tung_ky_tu()
+    {
+        var c = NewUser();
+        var made = await Json.Ok(await Import(c, Topic("Boxing",
+            Line("teacher", "What is boxing?", "Boxing là gì?"),
+            CodeLine(Snippet),
+            Note2("Boxing allocates on the heap.", "Boxing cấp phát trên heap."))));
+
+        var t = await Json.Read(await c.GetAsync($"/api/english/topics/{made[0].GetProperty("id").GetGuid()}"));
+        var lines = t.GetProperty("lines");
+
+        Assert.Equal("code", lines[1].GetProperty("kind").GetString());
+        Assert.Equal(Snippet, lines[1].GetProperty("en").GetString());
+        Assert.Equal("csharp", lines[1].GetProperty("vi").GetString());
+        Assert.Equal("", lines[1].GetProperty("speaker").GetString());
+    }
+
+    /// <summary>
+    /// ⚠️ Khối giải thích giờ là một CẶP Anh–Việt. Cả hai nửa phải về đúng chỗ: nhét tiếng
+    /// Việt vào cột tiếng Anh thì nút "Ẩn tiếng Việt" không ẩn được nó.
+    /// </summary>
+    [DbFact]
+    public async Task Khoi_giai_thich_giu_ca_hai_nua()
+    {
+        var c = NewUser();
+        var made = await Json.Ok(await Import(c, Topic("Song ngữ",
+            Line("teacher", "Hello.", "Xin chào."),
+            Note2("A string is immutable.", "string là bất biến."))));
+
+        var t = await Json.Read(await c.GetAsync($"/api/english/topics/{made[0].GetProperty("id").GetGuid()}"));
+        var note = t.GetProperty("lines")[1];
+
+        Assert.Equal("A string is immutable.", note.GetProperty("en").GetString());
+        Assert.Equal("string là bất biến.", note.GetProperty("vi").GetString());
+    }
+
+    /// <summary>
+    /// ⚠️ Một nửa là đủ. Bài dán theo bản đầu của định dạng phỏng vấn chỉ có giải thích
+    /// tiếng Việt; đòi đủ cả hai là những bài đó không sửa được nữa.
+    /// </summary>
+    [DbFact]
+    public async Task Khoi_giai_thich_co_mot_nua_cung_duoc()
+    {
+        var c = NewUser();
+
+        var chiViet = await Import(c, Topic("Chỉ Việt",
+            Line("teacher", "Hello.", "Xin chào."), Note2("", "Chỉ có tiếng Việt.")));
+        Assert.Equal(HttpStatusCode.OK, chiViet.StatusCode);
+
+        var chiAnh = await Import(c, Topic("Chỉ Anh",
+            Line("teacher", "Hello.", "Xin chào."), Note2("English only.", "")));
+        Assert.Equal(HttpStatusCode.OK, chiAnh.StatusCode);
+
+        var rong = await Import(c, Topic("Rỗng",
+            Line("teacher", "Hello.", "Xin chào."), Note2("  ", "  ")));
+        Assert.Equal(HttpStatusCode.BadRequest, rong.StatusCode);
+    }
+
+    /// <summary>Đoạn code rỗng thì từ chối — luật "dòng nào cũng phải có tiếng Anh" vẫn áp.</summary>
+    [DbFact]
+    public async Task Doan_code_rong_thi_tu_choi()
+    {
+        var c = NewUser();
+
+        var res = await Import(c, Topic("Rỗng",
+            Line("teacher", "Hello.", "Xin chào."), CodeLine("   ")));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [DbFact]
+    public async Task Doan_code_khong_mang_nguoi_noi()
+    {
+        var c = NewUser();
+        var made = await Json.Ok(await Import(c, Topic("Người nói",
+            new { kind = "code", speaker = "teacher", en = "var x = 1;", vi = "csharp" })));
+
+        var t = await Json.Read(await c.GetAsync($"/api/english/topics/{made[0].GetProperty("id").GetGuid()}"));
+        Assert.Equal("", t.GetProperty("lines")[0].GetProperty("speaker").GetString());
+    }
+
+    /// <summary>Đoạn code không phải câu học thuộc nên không được cộng vào số đếm.</summary>
+    [DbFact]
+    public async Task Dem_tren_danh_sach_bo_qua_doan_code()
+    {
+        var c = NewUser();
+        await Import(c, Topic("Đếm code",
+            Line("teacher", "A", "a"),
+            CodeLine("var x = 1;"),
             Phrase("x", "1")));
 
         var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];

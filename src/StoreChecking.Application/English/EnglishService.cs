@@ -428,8 +428,9 @@ public sealed class EnglishService(
             EnglishLessonLine.Para => EnglishLessonLine.Para,
             EnglishLessonLine.Level => EnglishLessonLine.Level,
             EnglishLessonLine.Note => EnglishLessonLine.Note,
+            EnglishLessonLine.Code => EnglishLessonLine.Code,
             _ => throw new ValidationException(
-                "Loại dòng phải là 'line', 'phrase', 'para', 'level' hoặc 'note'."),
+                "Loại dòng phải là 'line', 'phrase', 'para', 'level', 'note' hoặc 'code'."),
         };
 
     /// <summary>Which list a topic belongs to; anything unknown is refused, not guessed.</summary>
@@ -487,11 +488,12 @@ public sealed class EnglishService(
             if (kind == EnglishLessonLine.Para && vi.Length == 0)
                 throw new ValidationException("Đoạn văn phải có phần tiếng Việt để dịch.");
 
-            // ⚠️ A note carries its whole content in Vietnamese and nothing in English, so
-            // the usual "every row needs English" check is swapped for this one rather
-            // than dropped. An empty note would be an empty box on screen that nobody can
-            // tell apart from a parse that quietly lost the text.
-            if (kind == EnglishLessonLine.Note && vi.Length == 0)
+            // ⚠️ A note may be English and Vietnamese, or Vietnamese alone in lessons
+            // pasted before the format changed, so the usual "every row needs English"
+            // check is swapped for "at least one side has text" rather than dropped. An
+            // empty note is an empty box on screen that nobody can tell apart from a
+            // parse that quietly lost the text.
+            if (kind == EnglishLessonLine.Note && en.Length == 0 && vi.Length == 0)
                 throw new ValidationException("Khối giải thích phải có nội dung.");
 
             rows.Add(new EnglishLessonLine

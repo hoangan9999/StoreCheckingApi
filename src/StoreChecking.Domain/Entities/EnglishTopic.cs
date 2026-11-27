@@ -113,13 +113,24 @@ public class EnglishLessonLine : IOwnedByUser
     public const string Level = "level";
 
     /// <summary>
-    /// A "Giải thích" block: Vietnamese commentary on the answer above it, kept
-    /// verbatim in <see cref="Vi"/> with its line breaks and any code sample.
-    /// <para>⚠️ The one kind whose <see cref="En"/> is empty. Putting the text in
-    /// <see cref="En"/> instead would put Vietnamese in the English column, where "Ẩn
-    /// tiếng Việt" cannot hide it and the en-US voice would read it aloud.</para>
+    /// An "Explanation / Giải thích" block: commentary on the answer above it, with the
+    /// English in <see cref="En"/> and the Vietnamese in <see cref="Vi"/>.
+    /// <para>⚠️ The one kind that may have an empty <see cref="En"/>. Lessons pasted in
+    /// the first interview format carried the commentary in Vietnamese only, and they
+    /// still load; the check is "at least one side has text", not "English is present".
+    /// </para>
     /// </summary>
     public const string Note = "note";
+
+    /// <summary>
+    /// A standalone code sample. <see cref="En"/> holds the code verbatim, line breaks
+    /// and indentation included.
+    /// <para>⚠️ <see cref="Vi"/> holds the LANGUAGE NAME ("csharp"), the one place in
+    /// this table where that column is not Vietnamese. Folding the language into
+    /// <see cref="En"/> would print a stray "csharp" as the first line of the code, and
+    /// dropping it loses what syntax highlighting would need later.</para>
+    /// </summary>
+    public const string Code = "code";
 
     public const string Teacher = "teacher";
     public const string You = "you";
