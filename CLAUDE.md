@@ -1012,6 +1012,34 @@ trước mỗi lần chạy. Đã mất một vòng vì đúng chuyện này.
 đúng cái test giữ nó: cascade, trùng tên, `UpdatedAt`, lưu-bài-không-bỏ-loại, loại-người-khác,
 và bỏ-qua-chính-nó-lúc-đổi-tên.
 
+## Bài phỏng vấn kỹ thuật: hai loại dòng mới — 2026-11-27
+
+`db/026` nới `english_lesson_lines.kind` thêm `'level'` và `'note'`. Không có bảng mới, không
+có endpoint mới — đây vẫn là một chủ đề chứa danh sách dòng có thứ tự.
+
+- `level` — nhãn mức của nhóm câu hỏi ngay sau nó. `en` giữ nhãn ("Junior"), `vi` giữ ghi
+  chú đi kèm ("câu hỏi đào sâu").
+- `note` — khối "Giải thích". Tiếng Việt thuần, nhiều dòng, có thể kèm code.
+
+⚠️ **`note` là loại dòng ĐẦU TIÊN được phép có `en` rỗng.** `BuildLines` đổi sang đòi `vi`
+cho đúng loại này chứ không bỏ hẳn phép kiểm — một khối giải thích rỗng là một ô trống trên
+màn hình, không phân biệt được với một lần tách đã lặng lẽ làm mất chữ. Nhét cả khối vào `en`
+để khỏi sửa phép kiểm thì nhút "Ẩn tiếng Việt" không ẩn được nó, và giọng en-US sẽ đọc nó lên.
+
+⚠️ **Phải nới CẢ HAI ràng buộc, y như `db/024` đã phải làm với `'para'`.**
+`..._speaker_fits_kind` viết bằng `case kind when ... end`: thêm loại mới mà không thêm nhánh
+thì CASE trả NULL, mà **CHECK gặp NULL là coi như đạt**.
+
+**`Vi` chỉ `.Trim()` hai đầu**, giữ nguyên xuống dòng và thụt đầu dòng bên trong — đó là thứ làm
+một đoạn code dán vào còn đọc được. Có contract test so từng ký tự sau một vòng ghi/đọc.
+
+**Đo thật:** 239/239 contract test (thêm 7). Ba chốt đã thử phá: miễn trừ `en` cho note (5 đỏ),
+chặn khối rỗng, và chuẩn hoá `speaker` về rỗng cho loại không phải câu thoại.
+
+⚠️ Nhánh `'level'`/`'note'` trong CHECK **không có test nào giết được**, vì tầng ứng dụng đã
+chuẩn hoá `speaker` về rỗng trước khi ghi nên CHECK không bao giờ thấy giá trị xấu. Nó là lưới
+thứ hai, không phải lưới đầu — thứ được test là phép chuẩn hoá ở `BuildLines`.
+
 ## Việc chưa xong, không thuộc giai đoạn nào
 
 - [ ] **Lỗi JWT "issued at future"** bên Supabase vẫn chưa tìm ra nguyên nhân. API .NET

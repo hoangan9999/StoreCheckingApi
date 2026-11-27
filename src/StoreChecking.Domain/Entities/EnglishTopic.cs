@@ -105,6 +105,22 @@ public class EnglishLessonLine : IOwnedByUser
     /// </summary>
     public const string Para = "para";
 
+    /// <summary>
+    /// The level tag heading a group of interview questions: "Junior", "Middle",
+    /// "Senior", "Junior → Middle". <see cref="En"/> holds the tag, <see cref="Vi"/>
+    /// the note printed beside it ("câu hỏi đào sâu") when there is one.
+    /// </summary>
+    public const string Level = "level";
+
+    /// <summary>
+    /// A "Giải thích" block: Vietnamese commentary on the answer above it, kept
+    /// verbatim in <see cref="Vi"/> with its line breaks and any code sample.
+    /// <para>⚠️ The one kind whose <see cref="En"/> is empty. Putting the text in
+    /// <see cref="En"/> instead would put Vietnamese in the English column, where "Ẩn
+    /// tiếng Việt" cannot hide it and the en-US voice would read it aloud.</para>
+    /// </summary>
+    public const string Note = "note";
+
     public const string Teacher = "teacher";
     public const string You = "you";
 

@@ -426,7 +426,10 @@ public sealed class EnglishService(
             EnglishLessonLine.Line => EnglishLessonLine.Line,
             EnglishLessonLine.Phrase => EnglishLessonLine.Phrase,
             EnglishLessonLine.Para => EnglishLessonLine.Para,
-            _ => throw new ValidationException("Loại dòng phải là 'line', 'phrase' hoặc 'para'."),
+            EnglishLessonLine.Level => EnglishLessonLine.Level,
+            EnglishLessonLine.Note => EnglishLessonLine.Note,
+            _ => throw new ValidationException(
+                "Loại dòng phải là 'line', 'phrase', 'para', 'level' hoặc 'note'."),
         };
 
     /// <summary>Which list a topic belongs to; anything unknown is refused, not guessed.</summary>
@@ -461,8 +464,12 @@ public sealed class EnglishService(
             var kind = Kind(l.Kind);
             var speaker = (l.Speaker ?? "").Trim().ToLowerInvariant();
             var en = (l.En ?? "").Trim();
+            // Trimmed at the ends only: a note keeps its own line breaks and indentation,
+            // which is what makes a pasted code sample still readable.
+            var vi = (l.Vi ?? "").Trim();
 
-            if (en.Length == 0) throw new ValidationException("Dòng nào cũng phải có phần tiếng Anh.");
+            if (en.Length == 0 && kind != EnglishLessonLine.Note)
+                throw new ValidationException("Dòng nào cũng phải có phần tiếng Anh.");
 
             if (kind == EnglishLessonLine.Line)
             {
@@ -477,8 +484,15 @@ public sealed class EnglishService(
             // Cả bài dịch đứng trên đúng dòng này: `vi` là đề, `en` là bản dịch. Thiếu
             // `vi` thì bài còn mỗi bản tiếng Anh — không còn gì để dịch, mà nhìn vẫn như
             // một bài hợp lệ.
-            if (kind == EnglishLessonLine.Para && (l.Vi ?? "").Trim().Length == 0)
+            if (kind == EnglishLessonLine.Para && vi.Length == 0)
                 throw new ValidationException("Đoạn văn phải có phần tiếng Việt để dịch.");
+
+            // ⚠️ A note carries its whole content in Vietnamese and nothing in English, so
+            // the usual "every row needs English" check is swapped for this one rather
+            // than dropped. An empty note would be an empty box on screen that nobody can
+            // tell apart from a parse that quietly lost the text.
+            if (kind == EnglishLessonLine.Note && vi.Length == 0)
+                throw new ValidationException("Khối giải thích phải có nội dung.");
 
             rows.Add(new EnglishLessonLine
             {
@@ -487,7 +501,7 @@ public sealed class EnglishService(
                 Kind = kind,
                 Speaker = speaker,
                 En = en,
-                Vi = (l.Vi ?? "").Trim(),
+                Vi = vi,
                 Position = position++,
             });
         }

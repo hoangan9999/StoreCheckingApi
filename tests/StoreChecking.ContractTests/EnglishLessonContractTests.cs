@@ -778,6 +778,144 @@ public sealed class EnglishLessonContractTests(ApiFactory api)
         Assert.Equal(0, list.GetArrayLength());
     }
 
+
+    // ---------- Bài phỏng vấn kỹ thuật: dòng 'level' và 'note' ----------
+
+    private static object Level(string en, string vi = "") =>
+        new { kind = "level", speaker = (string?)null, en, vi };
+
+    private static object Note(string vi) =>
+        new { kind = "note", speaker = (string?)null, en = "", vi };
+
+    private const string Code =
+        "Đây là câu phân biệt junior và middle.\n\ncsharp\nint a = 5;\nint b = a;   // copy giá trị\n\nLưu ý: string là reference type.";
+
+    [DbFact]
+    public async Task Bai_phong_van_luu_duoc_ca_muc_va_khoi_giai_thich()
+    {
+        var c = NewUser();
+        var made = await Json.Ok(await Import(c, Topic("C# Fundamentals & OOP",
+            Level("Junior"),
+            Line("teacher", "What's the difference between value types and reference types?",
+                 "Value type và reference type khác nhau thế nào?"),
+            Line("you", "A value type holds its data directly.",
+                 "Value type chứa trực tiếp dữ liệu."),
+            Note(Code),
+            Level("Middle", "câu hỏi đào sâu"),
+            Phrase("holds its data directly", "chứa trực tiếp dữ liệu"))));
+
+        var t = await Json.Read(await c.GetAsync($"/api/english/topics/{made[0].GetProperty("id").GetGuid()}"));
+        var lines = t.GetProperty("lines");
+        Assert.Equal(6, lines.GetArrayLength());
+
+        Assert.Equal("level", lines[0].GetProperty("kind").GetString());
+        Assert.Equal("Junior", lines[0].GetProperty("en").GetString());
+        Assert.Equal("", lines[0].GetProperty("speaker").GetString());
+
+        Assert.Equal("note", lines[3].GetProperty("kind").GetString());
+        Assert.Equal("", lines[3].GetProperty("en").GetString());
+
+        Assert.Equal("Middle", lines[4].GetProperty("en").GetString());
+        Assert.Equal("câu hỏi đào sâu", lines[4].GetProperty("vi").GetString());
+    }
+
+    /// <summary>
+    /// ⚠️ Khối giải thích phải giữ nguyên xuống dòng và thụt đầu dòng. Đó là thứ duy nhất
+    /// làm một đoạn code dán vào còn đọc được; nối thành một dòng là mất hết.
+    /// </summary>
+    [DbFact]
+    public async Task Khoi_giai_thich_giu_nguyen_xuong_dong()
+    {
+        var c = NewUser();
+        var made = await Json.Ok(await Import(c, Topic("Giữ dòng",
+            Line("teacher", "Hello.", "Xin chào."),
+            Note(Code))));
+
+        var t = await Json.Read(await c.GetAsync($"/api/english/topics/{made[0].GetProperty("id").GetGuid()}"));
+        var vi = t.GetProperty("lines")[1].GetProperty("vi").GetString()!;
+
+        Assert.Equal(Code, vi);
+        Assert.Contains("\nint a = 5;\n", vi);
+    }
+
+    /// <summary>
+    /// 'note' là loại dòng DUY NHẤT được phép rỗng phần tiếng Anh. Mọi loại khác vẫn phải
+    /// có, không thì một dòng hội thoại trống lọt qua và bài có một ô rỗng không ai giải thích được.
+    /// </summary>
+    [DbFact]
+    public async Task Chi_rieng_note_duoc_rong_phan_tieng_Anh()
+    {
+        var c = NewUser();
+
+        var trong = await Import(c, Topic("Trống", Line("teacher", "   ", "Xin chào.")));
+        Assert.Equal(HttpStatusCode.BadRequest, trong.StatusCode);
+
+        var okRes = await Import(c, Topic("Được",
+            Line("teacher", "Hello.", "Xin chào."), Note("Giải thích.")));
+        Assert.Equal(HttpStatusCode.OK, okRes.StatusCode);
+    }
+
+    /// <summary>
+    /// ⚠️ Khối giải thích rỗng trơn là một ô trống trên màn hình, không phân biệt được với
+    /// một lần tách đã lặng lẽ làm mất chữ.
+    /// </summary>
+    [DbFact]
+    public async Task Khoi_giai_thich_rong_thi_tu_choi()
+    {
+        var c = NewUser();
+
+        var res = await Import(c, Topic("Rỗng",
+            Line("teacher", "Hello.", "Xin chào."), Note("   ")));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    /// <summary>
+    /// ⚠️ Loại dòng mới nào cũng phải có nhánh trong CHECK `speaker_fits_kind`: CASE không
+    /// khớp nhánh nào thì trả NULL, mà <b>CHECK gặp NULL là coi như đạt</b>. Lúc đó một dòng
+    /// 'level' mang speaker='teacher' lọt qua và giao diện vẽ nó thành câu thoại.
+    /// </summary>
+    [DbFact]
+    public async Task Dong_level_va_note_khong_mang_nguoi_noi()
+    {
+        var c = NewUser();
+        var made = await Json.Ok(await Import(c, Topic("Người nói",
+            new { kind = "level", speaker = "teacher", en = "Junior", vi = "" },
+            new { kind = "note", speaker = "you", en = "", vi = "Giải thích." })));
+
+        var t = await Json.Read(await c.GetAsync($"/api/english/topics/{made[0].GetProperty("id").GetGuid()}"));
+        Assert.Equal("", t.GetProperty("lines")[0].GetProperty("speaker").GetString());
+        Assert.Equal("", t.GetProperty("lines")[1].GetProperty("speaker").GetString());
+    }
+
+    [DbFact]
+    public async Task Loai_dong_la_thi_tu_choi()
+    {
+        var c = NewUser();
+
+        var res = await Import(c, Topic("Lạ",
+            new { kind = "quiz", speaker = (string?)null, en = "x", vi = "y" }));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    /// <summary>
+    /// Đếm trên danh sách chỉ đếm câu thoại và cụm từ. Dòng mức và khối giải thích không
+    /// phải thứ để học thuộc, nên cộng vào là con số trên màn hình không còn đúng với cái gì cả.
+    /// </summary>
+    [DbFact]
+    public async Task Dem_tren_danh_sach_bo_qua_level_va_note()
+    {
+        var c = NewUser();
+        await Import(c, Topic("Đếm",
+            Level("Junior"),
+            Line("teacher", "A", "a"),
+            Note("Giải thích."),
+            Phrase("x", "1")));
+
+        var row = (await Json.Read(await c.GetAsync("/api/english/topics")))[0];
+        Assert.Equal(1, row.GetProperty("lineCount").GetInt32());
+        Assert.Equal(1, row.GetProperty("phraseCount").GetInt32());
+    }
+
     [DbFact]
     public async Task Chua_dang_nhap_thi_khong_doc_duoc()
     {
